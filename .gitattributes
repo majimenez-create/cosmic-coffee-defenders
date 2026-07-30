@@ -1,0 +1,4 @@
+# Normaliza los finales de línea.
+# Windows y los servidores de Linux los escriben distinto, y sin esto cada
+# cambio aparecería como si el archivo entero se hubiera modificado.
+* text=auto eol=lf

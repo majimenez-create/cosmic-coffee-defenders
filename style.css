@@ -1,0 +1,78 @@
+/*
+  ESTILO DE LA PÁGINA
+  ===================
+
+  Aquí hay muy poco a propósito: todo el juego se dibuja dentro del lienzo.
+  Esta hoja solo se ocupa de centrarlo y de desactivar los comportamientos del
+  navegador que arruinarían una partida (que la página haga scroll al deslizar
+  el dedo, que un doble toque haga zoom, que aparezca el menú de copiar al
+  mantener pulsado...).
+*/
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: #05040B;
+  overflow: hidden;
+
+  /* Sin esto, en Android el gesto de deslizar recarga la página en mitad
+     de una partida. Es el fallo más frustrante de un juego web en móvil. */
+  overscroll-behavior: none;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  /* El fondo no es negro plano: un halo muy tenue hace que el lienzo parezca
+     el cristal iluminado de un mueble recreativo. */
+  background:
+    radial-gradient(ellipse at 50% 45%, #0E0B1E 0%, #05040B 70%);
+
+  font-family: "Arial Black", "Segoe UI Black", "Helvetica Neue", Roboto, sans-serif;
+  color: #C3CBD9;
+}
+
+#juego {
+  display: block;
+
+  /* El navegador no debe interpretar ningún gesto sobre el lienzo:
+     los dedos son del juego. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+
+  /* Respeta la muesca y la barra de gestos de los móviles modernos. */
+  margin: env(safe-area-inset-top) env(safe-area-inset-right)
+          env(safe-area-inset-bottom) env(safe-area-inset-left);
+
+  /* Resplandor exterior: el juego "ilumina" el marco. */
+  box-shadow: 0 0 60px rgba(63, 210, 255, 0.10),
+              0 0 140px rgba(255, 176, 32, 0.05);
+}
+
+/* Aro de foco visible para quien navegue con el teclado. */
+#juego:focus-visible {
+  outline: 2px solid #3FD2FF;
+  outline-offset: 3px;
+}
+
+.sin-js {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+  font-size: 0.9rem;
+  letter-spacing: 0.08em;
+}

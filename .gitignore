@@ -1,0 +1,15 @@
+# Archivos que genera Windows y que no forman parte del proyecto
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+
+# Editores
+.vscode/
+.idea/
+*.swp
+
+# Vercel
+.vercel
