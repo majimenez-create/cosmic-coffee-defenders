@@ -82,11 +82,12 @@ export class CampoDeEstrellas {
     this.capas.forEach((capa, indice) => {
       ctx.fillStyle = capa.def.color;
       const t = capa.def.tamano;
+      ctx.globalAlpha = capa.def.alpha;
       for (const e of capa.estrellas) {
         // Solo la capa intermedia parpadea: si parpadearan todas, el cielo
         // entero vibraría y competiría con la acción.
         if (indice === 1) {
-          ctx.globalAlpha = 0.5 + 0.5 * Math.sin(tiempo * 1.9 + e.fase);
+          ctx.globalAlpha = capa.def.alpha * (0.5 + 0.5 * Math.sin(tiempo * 1.9 + e.fase));
         }
         ctx.fillRect(e.x, e.y, t, t);
       }
@@ -94,8 +95,10 @@ export class CampoDeEstrellas {
     });
 
     ctx.fillStyle = ESTRELLAS.GRANO.color;
+    ctx.globalAlpha = ESTRELLAS.GRANO.alpha;
     for (const g of this.granos) {
       ctx.fillRect(g.x, g.y, ESTRELLAS.GRANO.tamano, ESTRELLAS.GRANO.tamano);
     }
+    ctx.globalAlpha = 1;
   }
 }

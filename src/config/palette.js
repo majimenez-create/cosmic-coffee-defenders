@@ -35,12 +35,18 @@ export const FONDO = {
   VINETA: '#000000',
 };
 
-// Tres capas de estrellas con paralaje. La velocidad crea la profundidad.
+/**
+ * Tres capas de estrellas con paralaje. La velocidad crea la profundidad.
+ *
+ * El alpha está deliberadamente bajo: el fondo no puede competir con la
+ * acción. Si durante una oleada el jugador NOTA el fondo, el fondo ha ganado
+ * y el juego ha perdido.
+ */
 export const ESTRELLAS = {
-  LEJANA:  { color: '#4A4468', tamano: 1.0, velocidad: 8 },
-  MEDIA:   { color: '#8C86A8', tamano: 1.5, velocidad: 22 },
-  CERCANA: { color: '#E8E4F0', tamano: 2.5, velocidad: 55 },
-  GRANO:   { color: '#C98A4B', tamano: 2.0, velocidad: 22 }, // estrellas-grano de café
+  LEJANA:  { color: '#4A4468', tamano: 1.0, velocidad: 8,  alpha: 0.75 },
+  MEDIA:   { color: '#8C86A8', tamano: 1.5, velocidad: 22, alpha: 0.60 },
+  CERCANA: { color: '#E8E4F0', tamano: 2.0, velocidad: 55, alpha: 0.55 },
+  GRANO:   { color: '#C98A4B', tamano: 2.0, velocidad: 22, alpha: 0.7 }, // guiño: granos de café
   CANTIDAD_BASE: 155,          // para 360x640; se escala por raíz del área
   CANTIDAD_MAXIMA: 260,
 };
