@@ -12,6 +12,7 @@
 import {
   PANTALLA, DISPARO, DISPARO_ENEMIGO, ATAQUES, PUNTUACION, PROGRESION,
   CICLO_FASES, JUGADOR as CFG_JUGADOR, EFECTOS, TIEMPOS, CARTELES, FORMACION,
+  BONUS,
 } from '../config/balance.js';
 import {
   HUD, FONDO, JUGADOR as COL_JUGADOR, ENEMIGOS as COL_ENEMIGOS, TIPOGRAFIA,
@@ -21,6 +22,7 @@ import {
 import { Taza, ESTADO } from '../game/player.js';
 import { Proyectiles } from '../game/bullets.js';
 import { Formacion } from '../game/formation.js';
+import { FaseBonus } from '../game/bonus.js';
 import { Particulas } from '../game/particles.js';
 import { proyectilTocaCirculo, circulosTocan } from '../game/collision.js';
 import { Caminos } from '../game/paths.js';
@@ -41,6 +43,9 @@ const FASE = {
   INTRO: 'intro',
   COMBATE: 'combate',
   OLEADA_LIMPIADA: 'limpiada',
+  BONUS_AVISO: 'bonusAviso',
+  BONUS: 'bonus',
+  BONUS_RESULTADO: 'bonusResultado',
   PAUSA: 'pausa',
   REANUDANDO: 'reanudando',
   FIN_PARTIDA: 'fin',
@@ -81,6 +86,7 @@ export class Partida {
     // recorrerlas es gratis.
     this.caminos = new Caminos(CAMINOS_TODOS, new Set(Object.keys(PICADOS)));
     this.formacion = new Formacion(this.caminos);
+    this.bonus = new FaseBonus(this.caminos);
     this.taza = new Taza(this.disparosJugador);
 
     this.record = leerRecord();
@@ -125,7 +131,7 @@ export class Partida {
 
   _entrarEnFase() {
     const plantilla = CICLO_FASES[(this.numeroFase - 1) % CICLO_FASES.length];
-    const pedidos = plantilla.enemigos ?? ['grano'];
+    const pedidos = plantilla.enemigos ?? ['grano', 'avispa', 'cafetera'];
     const tipos = pedidos.filter((t) => TIPOS_DIBUJABLES.includes(t));
 
     // Cada vuelta al ciclo de 5 fases sube la dificultad un poco, con un
@@ -140,6 +146,23 @@ export class Partida {
       PROGRESION.FRECUENCIA_ATAQUES_POR_CICLO ** ciclo
     );
 
+    this.tipoDeFase = plantilla.tipo;
+    this.disparosJugador.limpiar();
+    this.disparosEnemigos.limpiar();
+
+    // La puntería se mide por oleada, no por partida: así el dato del cartel
+    // habla de lo que el jugador acaba de hacer.
+    this.disparosAlEmpezarOleada = this.taza.disparosRealizados;
+    this.acertados = 0;
+
+    if (plantilla.tipo === 'bonus') {
+      this.bonus.empezar(TIPOS_DIBUJABLES, this.multiplicadorVelocidad);
+      this.formacion.enemigos = [];
+      this.fase = FASE.BONUS_AVISO;
+      this.temporizador = BONUS.AVISO_INICIAL;
+      return;
+    }
+
     this.formacion.poblar(tipos.length ? tipos : ['grano'], this.multiplicadorVelocidad);
 
     // Las primeras fases avisan más tiempo antes de cada ataque, y con eso
@@ -153,11 +176,6 @@ export class Partida {
     this.recargaAtaque = this._esFaseFacil()
       ? ATAQUES.ESPERA_PRIMER_ATAQUE_FACIL
       : ATAQUES.ESPERA_PRIMER_ATAQUE;
-
-    // La puntería se mide por oleada, no por partida: así el dato del cartel
-    // habla de lo que el jugador acaba de hacer.
-    this.disparosAlEmpezarOleada = this.taza.disparosRealizados;
-    this.acertados = 0;
   }
 
   _esFaseFacil() {
@@ -280,6 +298,36 @@ export class Partida {
           this._entrarEnFase();
         }
         break;
+
+      // --- Fase de bonificación ---
+      case FASE.BONUS_AVISO:
+        this.temporizador -= dt;
+        if (this.temporizador <= 0) this.fase = FASE.BONUS;
+        break;
+
+      case FASE.BONUS:
+        this.bonus.actualizar(dt);
+        this.taza.actualizar(dt, this.entrada, this.tiempo);
+        this.disparosJugador.actualizar(dt);
+        this._colisionesBonus();
+        if (this.bonus.terminada) {
+          this._sumarPuntos(this.bonus.puntos);
+          this.audio[this.bonus.perfecta ? 'nuevoRecord' : 'oleadaDespejada']();
+          this.fase = FASE.BONUS_RESULTADO;
+          this.temporizador = BONUS.RESULTADO;
+        }
+        this.entrada.finPaso();
+        return;
+
+      case FASE.BONUS_RESULTADO:
+        this.temporizador -= dt;
+        this.disparosJugador.actualizar(dt);
+        if (this.temporizador <= 0) {
+          this.numeroFase++;
+          this._entrarEnFase();
+        }
+        this.entrada.finPaso();
+        return;
     }
 
     if (this.entrada.pausaPulsada) {
@@ -355,6 +403,32 @@ export class Partida {
         DISPARO_ENEMIGO.VELOCIDAD * this.multiplicadorVelocidad
       );
       if (salio) this.audio.disparoEnemigo();
+    }
+  }
+
+  /**
+   * En la fase bonus solo hay una comprobación: tus disparos contra los
+   * objetivos. Nada puede tocar a la taza, y eso es intencionado.
+   */
+  _colisionesBonus() {
+    for (const p of this.disparosJugador.lista) {
+      if (!p.activo) continue;
+      for (const o of this.bonus.alcanzables) {
+        if (!proyectilTocaCirculo(p, o.x, o.y, o.radio)) continue;
+
+        this.disparosJugador.apagar(p);
+        this.acertados++;
+        o.recibirImpacto();
+        this.bonus.abatidos++;
+
+        this._mostrarPuntos(o.x, o.y, BONUS.PUNTOS_POR_OBJETIVO);
+        this.particulas.explosionEnemigo(
+          o.x, o.y, o.def.particulasExplosion, COL_ENEMIGOS[o.tipo].cuerpo
+        );
+        this.audio.explosionPequena();
+        this._sacudir(EFECTOS.SACUDIDA.enemigoPequeno);
+        break;
+      }
     }
   }
 
@@ -511,6 +585,7 @@ export class Partida {
     }
 
     this._dibujarEnemigos(ctx);
+    this._dibujarObjetivosBonus(ctx);
     this._dibujarJugador(ctx);
     this.particulas.dibujar(ctx);
     this._dibujarPuntosFlotantes(ctx);
@@ -572,6 +647,20 @@ export class Partida {
         ctx.arc(0, 0, e.radio, 0, Math.PI * 2);
         ctx.fill();
       }
+      ctx.restore();
+    }
+  }
+
+  _dibujarObjetivosBonus(ctx) {
+    if (this.fase !== FASE.BONUS && this.fase !== FASE.BONUS_RESULTADO) return;
+
+    for (const o of this.bonus.objetivos) {
+      if (!o.alcanzable) continue;
+      this.resplandor.halo(ctx, o.x, o.y, o.radio * 1.7, COL_ENEMIGOS[o.tipo].cuerpo, 0.4);
+      ctx.save();
+      ctx.translate(o.x, o.y);
+      if (o.angulo) ctx.rotate(o.angulo);
+      DIBUJOS[o.tipo](ctx, o, this.tiempo);
       ctx.restore();
     }
   }
@@ -713,6 +802,52 @@ export class Partida {
           espaciado: TIPOGRAFIA.ESPACIADOS.ETIQUETA,
           alineacion: 'centro',
           alpha,
+        });
+    }
+
+    // --- Fase de bonificación ---
+    if (this.fase === FASE.BONUS_AVISO) {
+      dibujarTexto(ctx, 'FASE ESPECIAL', centro, CARTELES.Y_PRINCIPAL, {
+        tamano: TIPOGRAFIA.TAMANOS.AVISO_FASE,
+        color: HUD.VALOR_DESTACADO,
+        espaciado: TIPOGRAFIA.ESPACIADOS.TITULO,
+        alineacion: 'centro',
+      });
+      // Decirlo explícitamente es lo que hace que el jugador se relaje y
+      // disfrute la coreografía, en lugar de jugarla a la defensiva.
+      dibujarTexto(ctx, 'NO PUEDEN DISPARARTE', centro, CARTELES.Y_PRINCIPAL + 28, {
+        tamano: TIPOGRAFIA.TAMANOS.OPCION_MENU,
+        color: COL_JUGADOR.CIAN,
+        espaciado: TIPOGRAFIA.ESPACIADOS.ENCABEZADO,
+        alineacion: 'centro',
+      });
+    }
+
+    if (this.fase === FASE.BONUS) {
+      // Contador de aciertos arriba: es el único dato que importa aquí.
+      dibujarTexto(ctx, `${this.bonus.abatidos} / ${BONUS.OBJETIVOS}`, centro, 62, {
+        tamano: TIPOGRAFIA.TAMANOS.VALOR_HUD,
+        color: HUD.TEXTO_PRIMARIO,
+        espaciado: TIPOGRAFIA.ESPACIADOS.VALOR,
+        alineacion: 'centro',
+      });
+    }
+
+    if (this.fase === FASE.BONUS_RESULTADO) {
+      const perfecta = this.bonus.perfecta;
+      dibujarTexto(ctx, perfecta ? '¡PERFECTO!' : 'FASE ESPECIAL', centro, CARTELES.Y_PRINCIPAL, {
+        tamano: TIPOGRAFIA.TAMANOS.ENCABEZADO,
+        color: perfecta ? HUD.RECORD_NUEVO : HUD.TEXTO_PRIMARIO,
+        espaciado: TIPOGRAFIA.ESPACIADOS.ENCABEZADO,
+        alineacion: 'centro',
+      });
+      dibujarTexto(ctx,
+        `${this.bonus.abatidos} / ${BONUS.OBJETIVOS}  ·  +${this.bonus.puntos}`,
+        centro, CARTELES.Y_PRINCIPAL + 26, {
+          tamano: TIPOGRAFIA.TAMANOS.OPCION_MENU,
+          color: HUD.VALOR_DESTACADO,
+          espaciado: TIPOGRAFIA.ESPACIADOS.ENCABEZADO,
+          alineacion: 'centro',
         });
     }
 

@@ -114,8 +114,51 @@ export const REENTRADAS = {
   ],
 };
 
+// ---------------------------------------------------------------------------
+// COREOGRAFÍAS — la fase de bonificación
+// ---------------------------------------------------------------------------
+
+/**
+ * En la fase bonus los enemigos no atacan: desfilan. Estos caminos atraviesan
+ * la pantalla entera de lado a lado o de arriba abajo, trazando figuras
+ * amplias y vistosas.
+ *
+ * Son deliberadamente largos y abiertos: el objetivo es que el jugador tenga
+ * tiempo de apuntar y disfrute la exhibición, no que se agobie.
+ */
+export const COREOGRAFIAS = {
+  /** Cruza en una gran S de lado a lado. */
+  ese_amplia: [
+    [-0.15, 0.20],
+    [0.30, 0.08], [0.55, 0.34], [0.50, 0.46],
+    [0.45, 0.58], [0.75, 0.62], [1.15, 0.48],
+  ],
+
+  /** Baja en espiral, estrechándose hacia el centro y saliendo por abajo. */
+  espiral: [
+    [0.50, -0.12],
+    [0.95, 0.10], [0.85, 0.44], [0.50, 0.40],
+    [0.15, 0.36], [0.22, 0.16], [0.45, 0.24],
+    [0.62, 0.30], [0.55, 0.80], [0.50, 1.12],
+  ],
+
+  /** Dos lazos encadenados: el ocho tumbado clásico de las exhibiciones. */
+  ocho: [
+    [-0.12, 0.34],
+    [0.20, 0.12], [0.46, 0.22], [0.50, 0.38],
+    [0.54, 0.54], [0.80, 0.64], [1.12, 0.42],
+  ],
+
+  /** Cae en abanico desde arriba y sale por el lado opuesto. */
+  abanico: [
+    [0.15, -0.10],
+    [0.20, 0.24], [0.42, 0.44], [0.60, 0.44],
+    [0.78, 0.44], [0.96, 0.26], [1.10, 0.62],
+  ],
+};
+
 /** Todo junto, que es lo que necesita el medidor de trayectorias. */
-export const TODOS = { ...ENTRADAS, ...PICADOS, ...REENTRADAS };
+export const TODOS = { ...ENTRADAS, ...PICADOS, ...REENTRADAS, ...COREOGRAFIAS };
 
 /** Qué picados usa cada tipo de enemigo. */
 export const PICADOS_POR_TIPO = {

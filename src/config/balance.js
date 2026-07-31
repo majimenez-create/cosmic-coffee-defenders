@@ -280,8 +280,15 @@ export const BONUS = {
   OBJETIVOS: 20,               // [BIBLIA]
   PUNTOS_POR_OBJETIVO: 200,    // [BIBLIA]
   BONIFICACION_PERFECTA: 5000, // [BIBLIA] si se destruyen todos
-  DURACION: 25,                // segundos de coreografía
   // [BIBLIA] los enemigos no atacan: es una fase de lucimiento, sin castigo.
+
+  OBJETIVOS_POR_GRUPO: 5,
+  ESPERA_ENTRE_GRUPOS: 3.2,
+  ESPERA_DENTRO_DEL_GRUPO: 0.28,
+  FACTOR_VELOCIDAD: 0.85,      // algo más lentos que en combate: hay que poder
+                               // apuntar y disfrutar el desfile
+  AVISO_INICIAL: 1.2,          // el cartel de "sin disparos enemigos"
+  RESULTADO: 2.2,              // lo que se muestra el recuento final
 };
 
 // ---------------------------------------------------------------------------
