@@ -12,7 +12,7 @@
  * que impide que la formación se tuerza con el tiempo.
  */
 
-import { ENEMIGOS } from '../config/balance.js';
+import { ENEMIGOS, FORMACION, ATAQUES, TIEMPOS } from '../config/balance.js';
 
 export const ESTADO_ENEMIGO = {
   EN_FORMACION: 'formacion',
@@ -39,16 +39,18 @@ export class Enemigo {
 
     // Cada unidad anima con un desfase propio para que la escuadra respire
     // en ola diagonal en lugar de moverse como un bloque.
-    this.desfase = (columna * (this.def.desfasePorColumna ?? 0.16)) + fila * 0.35;
+    this.desfase =
+      columna * this.def.animacion.desfasePorColumna +
+      fila * FORMACION.DESFASE_POR_FILA;
 
     this.destello = 0;   // parpadeo blanco al recibir un impacto
-    this.recarga = Math.random() * 3;
+    this.recarga = Math.random() * ATAQUES.RECARGA_INICIAL_MAXIMA;
   }
 
   /** @returns {boolean} true si ha muerto con este impacto */
   recibirImpacto() {
     this.vida--;
-    this.destello = 0.08;
+    this.destello = TIEMPOS.DESTELLO_IMPACTO;
     if (this.vida <= 0) {
       this.vivo = false;
       this.estado = ESTADO_ENEMIGO.MURIENDO;
@@ -60,9 +62,8 @@ export class Enemigo {
   actualizar(dt, formacion, tiempo) {
     if (!this.vivo) return;
 
-    const casilla = formacion.posicionDeCasilla(this.columna, this.fila);
-    this.x = casilla.x;
-    this.y = casilla.y;
+    // Se escribe directamente sobre el propio enemigo: sin objetos nuevos.
+    formacion.posicionDeCasilla(this.columna, this.fila, this);
 
     this.destello = Math.max(0, this.destello - dt);
     this.recarga = Math.max(0, this.recarga - dt);

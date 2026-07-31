@@ -10,7 +10,7 @@
  * tiros, esperas a que salgan de pantalla. Esa es la decisión interesante.
  */
 
-import { JUGADOR, DISPARO, ZONA_JUGADOR } from '../config/balance.js';
+import { JUGADOR, DISPARO, ZONA_JUGADOR, PANTALLA, TACTIL } from '../config/balance.js';
 
 export const ESTADO = {
   VIVO: 'vivo',
@@ -45,7 +45,7 @@ export class Taza {
     this.invulnerable = Math.max(0, this.invulnerable - dt);
     this._recarga = Math.max(0, this._recarga - dt);
     this._buferDisparo = Math.max(0, this._buferDisparo - dt);
-    this.retroceso = Math.max(0, this.retroceso - dt * 11); // vuelve en ~90 ms
+    this.retroceso = Math.max(0, this.retroceso - dt * JUGADOR.RECUPERACION_RETROCESO);
 
     if (this.estado === ESTADO.MURIENDO) {
       this._temporizador -= dt;
@@ -57,7 +57,8 @@ export class Taza {
       this._temporizador -= dt;
       // Sube desde debajo del borde hasta su altura de combate.
       const avance = 1 - Math.max(0, this._temporizador) / JUGADOR.ENTRADA_REAPARICION;
-      this.y = 640 + (ZONA_JUGADOR.Y - 640) * Math.min(1, avance);
+      const desde = PANTALLA.ALTO;
+      this.y = desde + (ZONA_JUGADOR.Y - desde) * Math.min(1, avance);
       if (this._temporizador <= 0) {
         this.y = ZONA_JUGADOR.Y;
         this.estado = ESTADO.VIVO;
@@ -79,7 +80,7 @@ export class Taza {
       // El dedo pide una posición absoluta, pero se limita la velocidad para
       // que un gesto brusco no teletransporte la taza: el ranking mundial
       // tiene que comparar partidas comparables.
-      const maximo = JUGADOR.VELOCIDAD * 1.6 * dt;
+      const maximo = TACTIL.VELOCIDAD_MAXIMA * dt;
       const diferencia = entrada.objetivoX - this.x;
       this.x += Math.max(-maximo, Math.min(maximo, diferencia));
     }
@@ -100,7 +101,9 @@ export class Taza {
     // El tope de proyectiles en pantalla es lo que regula la cadencia real.
     if (this.proyectiles.cantidad >= DISPARO.MAXIMO_EN_PANTALLA) return;
 
-    const salio = this.proyectiles.lanzar(this.x, this.y - 14, DISPARO.VELOCIDAD);
+    const salio = this.proyectiles.lanzar(
+      this.x, this.y - JUGADOR.ALTURA_BOCA, DISPARO.VELOCIDAD
+    );
     if (!salio) return;
 
     this._recarga = DISPARO.CADENCIA;

@@ -87,12 +87,19 @@ export class Entrada {
     });
   }
 
+  /**
+   * Teclas cuyo comportamiento por defecto del navegador hay que anular
+   * (la barra espaciadora hace scroll, las flechas también).
+   *
+   * La pausa NO está aquí a propósito: en pantalla completa el navegador se
+   * queda con Escape para salir y el juego nunca lo recibe. Por eso la tecla
+   * de pausa documentada es P.
+   */
   _esDeJuego(codigo) {
     return (
       TECLAS.IZQUIERDA.includes(codigo) ||
       TECLAS.DERECHA.includes(codigo) ||
-      TECLAS.DISPARO.includes(codigo) ||
-      codigo === 'Space'
+      TECLAS.DISPARO.includes(codigo)
     );
   }
 
@@ -175,31 +182,47 @@ export class Entrada {
   // Mando
   // -------------------------------------------------------------------------
 
+  /**
+   * El estado del mando se calcula aparte y se COMBINA con el del teclado.
+   * Escribir directamente sobre el estado compartido dejaba la taza
+   * moviéndose sola: al soltar el stick nadie devolvía el eje a cero.
+   */
   _leerMando() {
-    if (!navigator.getGamepads) return;
-    const mandos = navigator.getGamepads();
-    for (const m of mandos) {
-      if (!m) continue;
+    let ejeMando = 0;
+    let disparaMando = false;
+    let pausaMando = false;
 
-      const eje = m.axes[0] ?? 0;
-      const cruzIzq = m.buttons[14]?.pressed;
-      const cruzDer = m.buttons[15]?.pressed;
+    if (navigator.getGamepads) {
+      for (const m of navigator.getGamepads()) {
+        if (!m) continue;
 
-      if (cruzIzq) this.ejeX = -1;
-      else if (cruzDer) this.ejeX = 1;
-      else if (Math.abs(eje) > MANDO.ZONA_MUERTA) this.ejeX = Math.sign(eje);
+        const eje = m.axes[0] ?? 0;
+        if (m.buttons[14]?.pressed) ejeMando = -1;
+        else if (m.buttons[15]?.pressed) ejeMando = 1;
+        else if (Math.abs(eje) > MANDO.ZONA_MUERTA) ejeMando = Math.sign(eje);
 
-      const dispara = m.buttons[0]?.pressed;
-      if (dispara && !this._mandoDisparaba) this.disparoPulsado = true;
-      if (dispara) this.disparoMantenido = true;
-      this._mandoDisparaba = dispara;
-
-      const pausa = m.buttons[9]?.pressed;
-      if (pausa && !this._mandoPausaba) this.pausaPulsada = true;
-      this._mandoPausaba = pausa;
-
-      return; // solo el primer mando conectado
+        disparaMando = !!m.buttons[0]?.pressed;
+        pausaMando = !!m.buttons[9]?.pressed;
+        break; // solo el primer mando conectado
+      }
     }
+
+    if (ejeMando !== 0 && this.ejeX === 0) this.ejeX = ejeMando;
+
+    if (disparaMando) {
+      this.disparoMantenido = true;
+      if (!this._mandoDisparaba) this.disparoPulsado = true;
+    } else if (this._mandoDisparaba && !this._teclasDeDisparoPulsadas()) {
+      this.disparoMantenido = false;
+    }
+    this._mandoDisparaba = disparaMando;
+
+    if (pausaMando && !this._mandoPausaba) this.pausaPulsada = true;
+    this._mandoPausaba = pausaMando;
+  }
+
+  _teclasDeDisparoPulsadas() {
+    return TECLAS.DISPARO.some((c) => this._teclas.has(c));
   }
 
   // -------------------------------------------------------------------------
@@ -222,7 +245,13 @@ export class Entrada {
     this.ejeX = 0;
     this.disparoMantenido = false;
     this.disparoPulsado = false;
+    this.pausaPulsada = false;
+    this.confirmarPulsado = false;
     this._toqueId = null;
+    // También los flancos del mando: si no, tras volver de otra pestaña con
+    // el gatillo pulsado, el juego no detectaría la siguiente pulsación.
+    this._mandoDisparaba = false;
+    this._mandoPausaba = false;
   }
 
   /** Le dice a la entrada dónde está la taza, para que el arrastre se ancle bien. */

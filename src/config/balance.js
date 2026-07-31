@@ -59,11 +59,16 @@ export const JUGADOR = {
   ALTO: 34,
 
   // Secuencia de muerte y reaparición (decidido con el equipo de UX).
-  HITSTOP_MS: 110,             // congelación al morir, en milisegundos
+  // La congelación al morir está en EFECTOS.HITSTOP_MS.jugador.
   ESPERA_REAPARICION: 0.9,     // desde la explosión hasta que vuelve la taza
   ENTRADA_REAPARICION: 0.3,    // lo que tarda en subir desde abajo
   GRACIA_TRAS_INVULNERABILIDAD: 0.3, // margen antes de reanudar ataques
   X_REAPARICION: 180,          // siempre en el centro: previsible
+
+  ALTURA_BOCA: 14,             // desde dónde salen los disparos
+  RECUPERACION_RETROCESO: 11,  // cuánto de rápido vuelve tras el culatazo
+  PARPADEO_INVULNERABLE: 8,    // Hz. Baja a 2,5 con "reducir destellos"
+  ANILLO_INVULNERABLE: { radioBase: 14, radioExtra: 8, giro: 3, hueco: 1.66 },
 };
 
 // ---------------------------------------------------------------------------
@@ -121,8 +126,10 @@ export const ENEMIGOS = {
     alto: 20,                     // proporción 1,20
     dispara: false,               // [BIBLIA] el básico no dispara
     particulasExplosion: 22,
-    animacion: { tipo: 'rotacion', hz: 0.90, amplitudGrados: 8 },
-    desfasePorColumna: 0.16,      // hace que la formación respire en ola diagonal
+    categoriaImpacto: 'enemigoPequeno', // qué sacudida y congelación provoca
+    // El desfase por columna hace que la escuadra respire en ola diagonal
+    // en lugar de moverse como un bloque.
+    animacion: { tipo: 'rotacion', hz: 0.90, amplitudGrados: 8, desfasePorColumna: 0.16 },
   },
   avispa: {
     nombre: 'Avispa de vapor',    // [BIBLIA]
@@ -135,7 +142,8 @@ export const ENEMIGOS = {
     dispara: true,                // [BIBLIA] dispara UNA vez durante el ataque
     disparosPorAtaque: 1,         // [BIBLIA]
     particulasExplosion: 22,
-    animacion: { tipo: 'deformacion', hz: 6.0, escalaAlas: [1.0, 0.75] },
+    categoriaImpacto: 'enemigoPequeno',
+    animacion: { tipo: 'deformacion', hz: 6.0, escalaAlas: [1.0, 0.75], desfasePorColumna: 0.16 },
   },
   cafetera: {
     nombre: 'Cafetera guardiana', // [BIBLIA]
@@ -148,7 +156,8 @@ export const ENEMIGOS = {
     dispara: true,
     disparosPorAtaque: 2,
     particulasExplosion: 48,
-    animacion: { tipo: 'traslacion', hz: 0.45, amplitudPx: 2 },
+    categoriaImpacto: 'enemigoGrande', // el único que se siente "pesado"
+    animacion: { tipo: 'traslacion', hz: 0.45, amplitudPx: 2, desfasePorColumna: 0.16 },
     // Es el único enemigo que aguanta dos impactos, y el único con un
     // indicador de estado en el cuerpo: su manómetro. Con un impacto
     // recibido, la esfera se queda fija en ámbar y la aguja tiembla.
@@ -166,6 +175,10 @@ export const DISPARO_ENEMIGO = {
   ANCHO: 7,
   ALTO: 7,
   AVISO_ANTES_DE_DISPARAR: 0.15,  // chispa en el origen antes de salir
+  DESPLAZAMIENTO_ORIGEN: 12,      // por debajo del enemigo que dispara
+  RECARGA_TIRADOR: 1.2,           // lo que tarda ese enemigo en volver a tirar
+  FUNDIDO_AL_LIMPIAR: 0.2,        // al morir el jugador los disparos se apagan
+                                  // poco a poco, no desaparecen de golpe
 };
 
 // ---------------------------------------------------------------------------
@@ -207,6 +220,7 @@ export const ATAQUES = {
   ESPERA_PRIMER_ATAQUE: 3.0,   // desde el inicio de la fase
   ESPERA_PRIMER_ATAQUE_FACIL: 4.5, // en las fases 1-3
   INTERVALO_BASE: 2.4,         // tiempo medio entre tandas de ataque
+  RECARGA_INICIAL_MAXIMA: 3.0, // desincroniza a los enemigos al empezar
 
   // Reglas de juego limpio de la biblia: nunca aparecer encima del jugador
   // ni lanzar ataques imposibles de esquivar.
@@ -365,11 +379,58 @@ export const PUNTUACION = {
 };
 
 // ---------------------------------------------------------------------------
+// PROVISIONAL — se elimina en la fase 2
+// ---------------------------------------------------------------------------
+
+/**
+ * La biblia dice que el grano explorador NO dispara: la amenaza real vienen
+ * de los enemigos que se lanzan en picado. Pero los picados llegan en la
+ * fase 2, y hasta entonces un juego donde nada puede matarte no se puede
+ * probar de verdad.
+ *
+ * Así que, provisionalmente, cualquier enemigo puede disparar desde la
+ * formación. En cuanto existan los picados, esto se pone a false y se borra.
+ */
+export const PROVISIONAL = {
+  TODOS_DISPARAN: true,
+};
+
+// ---------------------------------------------------------------------------
+// RITMO DE LAS PANTALLAS
+// ---------------------------------------------------------------------------
+
+/**
+ * Cuánto dura cada cartel y cada transición. Son los números que marcan si el
+ * juego se siente ágil o pesado, así que viven aquí y no repartidos.
+ */
+export const TIEMPOS = {
+  INTRO_FASE: 1.3,             // el cartel "FASE 3"
+  FIN_OLEADA: 1.8,             // el panel con la puntería
+  BLOQUEO_FIN_PARTIDA: 0.4,    // sin esto, quien machaca el disparo se salta
+                               // su propia puntuación sin llegar a verla
+  CUENTA_ATRAS_PAUSA: 0.6,     // por cada número del 3 · 2 · 1
+  DESTELLO_IMPACTO: 0.08,      // el parpadeo blanco del enemigo golpeado
+};
+
+/** Posición vertical de cada cartel, para que no bailen entre pantallas. */
+export const CARTELES = {
+  Y_TITULO: 270,
+  Y_PRINCIPAL: 300,
+  Y_SECUNDARIO: 316,
+  Y_LLAMADA: 380,
+  // Si una amenaza se acerca más que esto a un cartel, el cartel se atenúa.
+  // Ningún texto puede participar en la muerte del jugador.
+  DISTANCIA_ATENUACION: 80,
+  ALPHA_ATENUADO: 0.2,
+};
+
+// ---------------------------------------------------------------------------
 // EFECTOS Y RENDIMIENTO
 // ---------------------------------------------------------------------------
 
 export const EFECTOS = {
   PARTICULAS_MAXIMAS: 400,     // techo global; por encima se reciclan las viejas
+  ANILLOS_MAXIMOS: 8,          // anillos de choque simultáneos
   SHADOWBLUR_MAXIMO_POR_FRAME: 30, // la operación más cara de canvas
 
   SACUDIDA: {
@@ -378,6 +439,14 @@ export const EFECTOS = {
     jugador:        { amplitud: 8, duracion: 0.50 },
     jefe:           { amplitud: 10, duracion: 0.90 },
   },
+  // Cuánto de rápido se apaga la sacudida. Se aplica sobre el avance
+  // relativo, no sobre segundos, para que una sacudida corta también empiece
+  // a su amplitud completa.
+  SACUDIDA_DECAIMIENTO: 6,
+  SACUDIDA_FRECUENCIA_X: 140,
+  SACUDIDA_FRECUENCIA_Y: 117,  // distinta de la de X, o la sacudida sería una
+                               // línea recta en diagonal
+  SACUDIDA_PROPORCION_Y: 0.6,
 
   HITSTOP_MS: {
     enemigoPequeno: 30,

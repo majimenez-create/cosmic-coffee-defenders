@@ -33,6 +33,12 @@ export const FONDO = {
 
   REJILLA_ZONA: '#2A1B3D',     // líneas del tercio inferior: territorio del jugador
   VINETA: '#000000',
+
+  // Velos oscuros. Se declaran aquí para que nadie reconstruya el color base
+  // a mano en otro archivo: si mañana el fondo cambia, cambian con él.
+  VELO_HUD: 'rgba(5, 4, 11, 0.5)',
+  VELO_TRANSPARENTE: 'rgba(5, 4, 11, 0)',
+  VELO_PANTALLA: 'rgba(5, 4, 11, 0.6)',
 };
 
 /**
@@ -71,10 +77,12 @@ export const GALAXIA_GRANOS = {
 // ---------------------------------------------------------------------------
 
 export const JUGADOR = {
+  PORCELANA_ESPECULAR: '#FFFFFF', // la parada de luz del cilindro cerámico
   PORCELANA_CLARA: '#F4F7FB',
   PORCELANA_MEDIA: '#DCE4EE',
   SOMBRA_CERAMICA: '#AFC0D6',
   SOMBRA_PROFUNDA: '#7A8CA3',
+  HUECO_ICONO: '#0A1A24',      // el interior del icono de vida del HUD
 
   CIAN: '#3FD2FF',             // color de identidad del jugador
   CIAN_NUCLEO: '#B8F4FF',
@@ -230,6 +238,8 @@ export const TIPOGRAFIA = {
     OPCION_SELECCIONADA: 17,
     ETIQUETA_HUD: 8,
     VALOR_HUD: 14,
+    PUNTUACION: 16,            // el dato principal: el más grande del HUD
+    RECORD: 12,                // terciario: solo importa cuando te acercas
     CUERPO: 11,
     PUNTOS_FLOTANTES: 10,
   },

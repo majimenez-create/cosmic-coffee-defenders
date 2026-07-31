@@ -10,10 +10,12 @@
  */
 
 import {
-  PANTALLA, DISPARO, DISPARO_ENEMIGO, ATAQUES, PUNTUACION,
-  CICLO_FASES, JUGADOR as CFG_JUGADOR, EFECTOS,
+  PANTALLA, DISPARO, DISPARO_ENEMIGO, ATAQUES, PUNTUACION, PROGRESION,
+  CICLO_FASES, JUGADOR as CFG_JUGADOR, EFECTOS, TIEMPOS, CARTELES, PROVISIONAL,
 } from '../config/balance.js';
-import { HUD, JUGADOR as COL_JUGADOR, ENEMIGOS as COL_ENEMIGOS, TIPOGRAFIA } from '../config/palette.js';
+import {
+  HUD, FONDO, JUGADOR as COL_JUGADOR, ENEMIGOS as COL_ENEMIGOS, TIPOGRAFIA,
+} from '../config/palette.js';
 
 import { Taza, ESTADO } from '../game/player.js';
 import { Proyectiles } from '../game/bullets.js';
@@ -31,8 +33,18 @@ const FASE = {
   INTRO: 'intro',
   COMBATE: 'combate',
   OLEADA_LIMPIADA: 'limpiada',
+  PAUSA: 'pausa',
+  REANUDANDO: 'reanudando',
   FIN_PARTIDA: 'fin',
 };
+
+/**
+ * Qué tipos de enemigo sabe dibujar el juego hoy. Es una salvaguarda: crear
+ * una avispa cuando solo existe el dibujo del grano haría que un enemigo de
+ * 2 puntos de vida y hitbox distinta se viera exactamente igual que el
+ * básico, y eso rompe la promesa de que cada muerte se sienta justa.
+ */
+const TIPOS_DIBUJABLES = ['grano'];
 
 export class Partida {
   constructor(entrada) {
@@ -47,6 +59,8 @@ export class Partida {
 
     this.record = leerRecord();
     this.sacudida = 0;
+    this.sacudidaDuracion = 1;
+    this.sacudidaAmplitud = 0;
     this.congelacion = 0;
     this.tiempo = 0;
 
@@ -64,36 +78,74 @@ export class Partida {
     this.numeroFase = 1;
     this.siguienteVidaExtra = PUNTUACION.VIDA_EXTRA_CADA;
 
+    // Se recuerda el récord con el que se ENTRA a la partida. Si no, como el
+    // récord se actualiza en cuanto se supera, al final siempre parecería que
+    // has hecho récord aunque hayas quedado muy por debajo.
+    this.recordAlEmpezar = this.record;
+
     this._entrarEnFase();
   }
 
   _entrarEnFase() {
     const plantilla = CICLO_FASES[(this.numeroFase - 1) % CICLO_FASES.length];
-    // En la fase 1 solo existen las fases normales; bonus y jefe llegan
-    // en la fase 4 del proyecto. Mientras tanto se reutilizan las normales.
-    const tipos = plantilla.enemigos ?? ['grano'];
-    this.formacion.poblar(tipos.includes('grano') ? tipos : ['grano']);
+    const pedidos = plantilla.enemigos ?? ['grano'];
+    const tipos = pedidos.filter((t) => TIPOS_DIBUJABLES.includes(t));
+    this.formacion.poblar(tipos.length ? tipos : ['grano']);
 
     this.fase = FASE.INTRO;
-    this.temporizador = 1.3;
-    this.tiempoDeFase = 0;
+    this.temporizador = TIEMPOS.INTRO_FASE;
 
     // La puntería se mide por oleada, no por partida: así el dato del cartel
     // habla de lo que el jugador acaba de hacer.
     this.disparosAlEmpezarOleada = this.taza.disparosRealizados;
     this.acertados = 0;
+
     this.recargaEnemigos = this._esFaseFacil()
       ? ATAQUES.ESPERA_PRIMER_ATAQUE_FACIL
       : ATAQUES.ESPERA_PRIMER_ATAQUE;
   }
 
   _esFaseFacil() {
-    return this.numeroFase <= 3;
+    return this.numeroFase <= PROGRESION.FASES_FACILES;
+  }
+
+  // -------------------------------------------------------------------------
+  // Pausa
+  // -------------------------------------------------------------------------
+
+  /** Se llama cuando el jugador cambia de pestaña o de aplicación. */
+  perderFoco() {
+    this.pausar();
+  }
+
+  pausar() {
+    if (this.fase === FASE.PAUSA || this.fase === FASE.FIN_PARTIDA) return;
+    this.faseAntesDePausar = this.fase;
+    this.temporizadorAntesDePausar = this.temporizador;
+    this.fase = FASE.PAUSA;
+    this.entrada.limpiar();
+  }
+
+  /** Nunca se vuelve de golpe: primero la cuenta atrás 3 · 2 · 1. */
+  reanudar() {
+    this.fase = FASE.REANUDANDO;
+    this.cuentaAtras = TIEMPOS.CUENTA_ATRAS_PAUSA * 3;
   }
 
   // -------------------------------------------------------------------------
   // Lógica
   // -------------------------------------------------------------------------
+
+  /**
+   * Lo único que sigue avanzando durante la congelación de impacto. Si se
+   * congelara también la explosión, el golpe parecería una caída de
+   * fotogramas en vez de un impacto.
+   */
+  actualizarEfectos(dt) {
+    this.tiempo += dt;
+    this.particulas.actualizar(dt);
+    this.sacudida = Math.max(0, this.sacudida - dt);
+  }
 
   actualizar(dt) {
     this.tiempo += dt;
@@ -111,29 +163,57 @@ export class Partida {
       );
     }
 
-    if (this.fase === FASE.FIN_PARTIDA) {
-      this.temporizador -= dt;
-      if (this.temporizador <= 0 && this.entrada.confirmarPulsado) this.empezar();
+    switch (this.fase) {
+      case FASE.PAUSA:
+        if (this.entrada.confirmarPulsado || this.entrada.pausaPulsada) this.reanudar();
+        this.entrada.finPaso();
+        return;
+
+      case FASE.REANUDANDO:
+        this.cuentaAtras -= dt;
+        if (this.cuentaAtras <= 0) {
+          this.fase = this.faseAntesDePausar;
+          this.temporizador = this.temporizadorAntesDePausar;
+        }
+        this.entrada.finPaso();
+        return;
+
+      case FASE.FIN_PARTIDA:
+        this.temporizador -= dt;
+        // El bloqueo inicial existe para que quien esté machacando el disparo
+        // no se salte su propia puntuación sin verla. Pasado ese margen, la
+        // pulsación se atiende aunque se hubiera hecho antes: nunca se come
+        // una pulsación.
+        if (this.entrada.confirmarPulsado) this.confirmacionPendiente = true;
+        if (this.temporizador <= 0 && this.confirmacionPendiente) {
+          this.confirmacionPendiente = false;
+          this.empezar();
+        }
+        this.entrada.finPaso();
+        return;
+
+      case FASE.INTRO:
+        this.temporizador -= dt;
+        // Durante la intro el jugador YA tiene el control y la escuadra ya
+        // está en pantalla. Nunca hay un fotograma de pantalla vacía.
+        if (this.temporizador <= 0) this.fase = FASE.COMBATE;
+        break;
+
+      case FASE.OLEADA_LIMPIADA:
+        this.temporizador -= dt;
+        if (this.temporizador <= 0) {
+          this.numeroFase++;
+          this._entrarEnFase();
+        }
+        break;
+    }
+
+    if (this.entrada.pausaPulsada) {
+      this.pausar();
       this.entrada.finPaso();
       return;
     }
 
-    if (this.fase === FASE.INTRO) {
-      this.temporizador -= dt;
-      // Ojo: durante la intro el jugador YA tiene el control y la escuadra ya
-      // está en pantalla. Nunca hay un fotograma de pantalla vacía.
-      if (this.temporizador <= 0) this.fase = FASE.COMBATE;
-    }
-
-    if (this.fase === FASE.OLEADA_LIMPIADA) {
-      this.temporizador -= dt;
-      if (this.temporizador <= 0) {
-        this.numeroFase++;
-        this._entrarEnFase();
-      }
-    }
-
-    this.tiempoDeFase += dt;
     this.formacion.actualizar(dt);
     this.taza.actualizar(dt, this.entrada, this.tiempo);
     this.disparosJugador.actualizar(dt);
@@ -144,7 +224,7 @@ export class Partida {
 
     if (this.fase === FASE.COMBATE && !this.formacion.quedanVivos) {
       this.fase = FASE.OLEADA_LIMPIADA;
-      this.temporizador = 1.8;
+      this.temporizador = TIEMPOS.FIN_OLEADA;
     }
 
     this.entrada.finPaso();
@@ -155,16 +235,21 @@ export class Partida {
     if (this.recargaEnemigos > 0) return;
     if (this.taza.estado !== ESTADO.VIVO) return;
 
-    const tirador = this.formacion.elegirTirador();
+    const tirador = this.formacion.elegirTirador(PROVISIONAL.TODOS_DISPARAN);
     if (tirador) {
-      this.disparosEnemigos.lanzar(tirador.x, tirador.y + 12, DISPARO_ENEMIGO.VELOCIDAD);
-      tirador.recarga = 1.2;
+      this.disparosEnemigos.lanzar(
+        tirador.x,
+        tirador.y + DISPARO_ENEMIGO.DESPLAZAMIENTO_ORIGEN,
+        DISPARO_ENEMIGO.VELOCIDAD
+      );
+      tirador.recarga = DISPARO_ENEMIGO.RECARGA_TIRADOR;
     }
 
     // Las primeras fases perdonan más: es lo que engancha a quien abre el
     // enlace por primera vez.
-    const base = ATAQUES.INTERVALO_BASE;
-    this.recargaEnemigos = this._esFaseFacil() ? base * 1.6 : base;
+    this.recargaEnemigos = this._esFaseFacil()
+      ? ATAQUES.INTERVALO_BASE / PROGRESION.MULTIPLICADOR_FASES_FACILES
+      : ATAQUES.INTERVALO_BASE;
   }
 
   _resolverColisiones() {
@@ -183,8 +268,11 @@ export class Partida {
           this.particulas.explosionEnemigo(
             e.x, e.y, e.def.particulasExplosion, COL_ENEMIGOS[e.tipo].cuerpo
           );
-          this._sacudir(EFECTOS.SACUDIDA.enemigoPequeno);
-          this.congelacion = EFECTOS.HITSTOP_MS.enemigoPequeno;
+          // Cada categoría tiene su propio peso: matar a la unidad de 400
+          // puntos no puede sentirse igual que matar a la de 100.
+          const categoria = e.def.categoriaImpacto;
+          this._sacudir(EFECTOS.SACUDIDA[categoria]);
+          this.congelacion = EFECTOS.HITSTOP_MS[categoria];
         } else {
           this.particulas.impacto(p.x, p.y);
         }
@@ -198,8 +286,7 @@ export class Partida {
     for (const p of this.disparosEnemigos.lista) {
       if (!p.activo) continue;
       if (!proyectilTocaCirculo(p, this.taza.x, this.taza.y, CFG_JUGADOR.RADIO_COLISION)) continue;
-      this.disparosEnemigos.apagar(p);
-      this._matarJugador();
+      this._matarJugador(p);
       return;
     }
 
@@ -207,30 +294,31 @@ export class Partida {
     for (const e of this.formacion.enemigos) {
       if (!e.vivo) continue;
       if (circulosTocan(this.taza.x, this.taza.y, CFG_JUGADOR.RADIO_COLISION, e.x, e.y, e.radio)) {
-        this._matarJugador();
+        this._matarJugador(null);
         return;
       }
     }
   }
 
-  _matarJugador() {
+  /**
+   * @param {object|null} culpable  el proyectil que ha matado, si lo hubo
+   */
+  _matarJugador(culpable) {
     this.particulas.explosionJugador(this.taza.x, this.taza.y);
     this._sacudir(EFECTOS.SACUDIDA.jugador);
     this.congelacion = EFECTOS.HITSTOP_MS.jugador;
 
     const finPartida = this.taza.morir();
 
-    // Al perder una vida se limpia la amenaza: los disparos enemigos se
-    // apagan. Reaparecer dentro de una lluvia de balas sería injusto.
-    this.disparosEnemigos.limpiar();
+    // Toda muerte deja rastro: lo que te ha matado se queda quieto y visible
+    // un momento, para que puedas ver qué ha sido. Convierte un "no sé qué ha
+    // pasado" en un "vale, ha sido ese".
+    this.disparosEnemigos.apagarTodos(culpable);
 
     if (finPartida) {
       this.fase = FASE.FIN_PARTIDA;
-      this.temporizador = 1.2;
-      if (this.puntos > this.record) {
-        this.record = this.puntos;
-        guardarRecord(this.record);
-      }
+      this.temporizador = TIEMPOS.BLOQUEO_FIN_PARTIDA;
+      this.confirmacionPendiente = false;
     }
   }
 
@@ -249,8 +337,13 @@ export class Partida {
   }
 
   _sacudir(config) {
-    this.sacudida = Math.max(this.sacudida, config.duracion);
-    this.sacudidaAmplitud = config.amplitud;
+    // Se guarda también la duración total: sin ella, una sacudida corta
+    // empezaría ya casi apagada y no se vería.
+    if (config.amplitud >= this.sacudidaAmplitud || this.sacudida <= 0) {
+      this.sacudidaAmplitud = config.amplitud;
+      this.sacudidaDuracion = config.duracion;
+      this.sacudida = config.duracion;
+    }
   }
 
   /** Milisegundos que el bucle debe congelar. Se consume al leerlo. */
@@ -269,12 +362,11 @@ export class Partida {
 
     ctx.save();
     if (this.sacudida > 0) {
-      // Dos frecuencias distintas en X e Y para que la sacudida no sea una
-      // línea recta. Decae exponencialmente.
-      const fuerza = this.sacudidaAmplitud * Math.exp(-6 * (0.5 - this.sacudida));
+      const avance = 1 - this.sacudida / this.sacudidaDuracion;
+      const fuerza = this.sacudidaAmplitud * Math.exp(-EFECTOS.SACUDIDA_DECAIMIENTO * avance);
       ctx.translate(
-        Math.sin(this.tiempo * 140) * fuerza,
-        Math.cos(this.tiempo * 117) * fuerza * 0.6
+        Math.sin(this.tiempo * EFECTOS.SACUDIDA_FRECUENCIA_X) * fuerza,
+        Math.cos(this.tiempo * EFECTOS.SACUDIDA_FRECUENCIA_Y) * fuerza * EFECTOS.SACUDIDA_PROPORCION_Y
       );
     }
 
@@ -307,8 +399,8 @@ export class Partida {
       // acertado sin necesidad de números.
       if (e.destello > 0) {
         ctx.globalCompositeOperation = 'lighter';
-        ctx.globalAlpha = e.destello / 0.08 * 0.6;
-        ctx.fillStyle = '#FFFFFF';
+        ctx.globalAlpha = (e.destello / TIEMPOS.DESTELLO_IMPACTO) * 0.6;
+        ctx.fillStyle = COL_JUGADOR.PORCELANA_ESPECULAR;
         ctx.beginPath();
         ctx.arc(0, 0, e.radio, 0, Math.PI * 2);
         ctx.fill();
@@ -325,17 +417,24 @@ export class Partida {
 
     if (this.taza.invulnerable > 0) {
       // Dos canales, no uno: parpadeo Y anillo que se contrae marcando el
-      // tiempo que queda. Solo con el parpadeo, el jugador no sabe cuánto
-      // le falta para volver a ser vulnerable.
-      ctx.globalAlpha = Math.sin(this.tiempo * 50) > 0 ? 1 : 0.35;
+      // tiempo que queda. Solo con el parpadeo, el jugador no sabe cuánto le
+      // falta para volver a ser vulnerable.
+      const hz = CFG_JUGADOR.PARPADEO_INVULNERABLE;
+      ctx.globalAlpha = Math.sin(this.tiempo * hz * Math.PI * 2) > 0 ? 1 : 0.35;
 
-      const restante = this.taza.invulnerable / CFG_JUGADOR.INVULNERABILIDAD;
+      const anillo = CFG_JUGADOR.ANILLO_INVULNERABLE;
+      const restante = Math.min(1, this.taza.invulnerable / CFG_JUGADOR.INVULNERABILIDAD);
       ctx.save();
       ctx.globalAlpha = 0.4;
       ctx.strokeStyle = COL_JUGADOR.CIAN;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(0, 0, 14 + 8 * Math.min(1, restante), this.tiempo * 3, this.tiempo * 3 + Math.PI * 1.66);
+      ctx.arc(
+        0, 0,
+        anillo.radioBase + anillo.radioExtra * restante,
+        this.tiempo * anillo.giro,
+        this.tiempo * anillo.giro + Math.PI * anillo.hueco
+      );
       ctx.stroke();
       ctx.restore();
     }
@@ -359,57 +458,105 @@ export class Partida {
       if (!p.activo) continue;
       ctx.save();
       ctx.translate(p.x, p.y);
-      dibujarDisparoEnemigo(ctx, p.edad);
+      ctx.globalAlpha = p.opacidad;
+      dibujarDisparoEnemigo(ctx, p.edad, p.culpable);
       ctx.restore();
     }
+  }
+
+  /** ¿Hay alguna amenaza cerca de un cartel? Si la hay, el cartel se aparta. */
+  _alphaCartel(y) {
+    let alpha = 1;
+    for (const p of this.disparosEnemigos.lista) {
+      if (!p.activo) continue;
+      if (Math.abs(p.y - y) < CARTELES.DISTANCIA_ATENUACION) {
+        alpha = CARTELES.ALPHA_ATENUADO;
+        break;
+      }
+    }
+    return alpha;
   }
 
   _dibujarCarteles(ctx) {
     const centro = PANTALLA.ANCHO / 2;
 
     if (this.fase === FASE.INTRO) {
-      const alpha = Math.min(1, this.temporizador * 3, (1.3 - this.temporizador) * 4);
-      dibujarTexto(ctx, 'FASE ' + this.numeroFase, centro, 300, {
+      const entrada = (TIEMPOS.INTRO_FASE - this.temporizador) * 4;
+      const alpha = Math.max(0, Math.min(1, this.temporizador * 3, entrada));
+      dibujarTexto(ctx, 'FASE ' + this.numeroFase, centro, CARTELES.Y_PRINCIPAL, {
         tamano: TIPOGRAFIA.TAMANOS.AVISO_FASE,
         color: HUD.VALOR_DESTACADO,
         espaciado: TIPOGRAFIA.ESPACIADOS.TITULO,
         alineacion: 'centro',
-        alpha: Math.max(0, alpha),
+        alpha: alpha * this._alphaCartel(CARTELES.Y_PRINCIPAL),
       });
     }
 
     if (this.fase === FASE.OLEADA_LIMPIADA) {
-      dibujarTexto(ctx, 'OLEADA ' + this.numeroFase + ' DESPEJADA', centro, 290, {
+      const alpha = this._alphaCartel(CARTELES.Y_PRINCIPAL);
+      dibujarTexto(ctx, 'OLEADA ' + this.numeroFase + ' DESPEJADA', centro, CARTELES.Y_PRINCIPAL, {
         tamano: TIPOGRAFIA.TAMANOS.OPCION_MENU,
         color: HUD.TEXTO_PRIMARIO,
         espaciado: TIPOGRAFIA.ESPACIADOS.ENCABEZADO,
         alineacion: 'centro',
+        alpha,
       });
       // La puntería es el gancho de rejugabilidad de Galaga: cuesta tres
       // líneas medirla y da un motivo para volver a intentarlo.
       const disparados = this.taza.disparosRealizados - this.disparosAlEmpezarOleada;
       const porcentaje = disparados ? Math.round((this.acertados / disparados) * 100) : 0;
-      dibujarTexto(ctx, `PUNTERÍA ${this.acertados}/${disparados} · ${porcentaje} %`, centro, 316, {
-        tamano: TIPOGRAFIA.TAMANOS.ETIQUETA_HUD,
-        color: HUD.ETIQUETA,
-        espaciado: TIPOGRAFIA.ESPACIADOS.ETIQUETA,
+      dibujarTexto(ctx, `PUNTERÍA ${this.acertados}/${disparados} · ${porcentaje} %`,
+        centro, CARTELES.Y_SECUNDARIO, {
+          tamano: TIPOGRAFIA.TAMANOS.ETIQUETA_HUD,
+          color: HUD.ETIQUETA,
+          espaciado: TIPOGRAFIA.ESPACIADOS.ETIQUETA,
+          alineacion: 'centro',
+          alpha,
+        });
+    }
+
+    if (this.fase === FASE.PAUSA) {
+      ctx.fillStyle = FONDO.VELO_PANTALLA;
+      ctx.fillRect(0, 0, PANTALLA.ANCHO, PANTALLA.ALTO);
+      dibujarTexto(ctx, 'PAUSA', centro, CARTELES.Y_TITULO, {
+        tamano: TIPOGRAFIA.TAMANOS.ENCABEZADO,
+        color: HUD.TEXTO_PRIMARIO,
+        espaciado: TIPOGRAFIA.ESPACIADOS.ENCABEZADO,
+        alineacion: 'centro',
+      });
+      dibujarTexto(ctx, 'PULSA PARA CONTINUAR', centro, CARTELES.Y_LLAMADA, {
+        tamano: TIPOGRAFIA.TAMANOS.OPCION_MENU,
+        color: COL_JUGADOR.CIAN,
+        espaciado: TIPOGRAFIA.ESPACIADOS.ENCABEZADO,
+        alineacion: 'centro',
+        alpha: Math.sin(this.tiempo * 4) > -0.3 ? 1 : 0.25,
+      });
+    }
+
+    if (this.fase === FASE.REANUDANDO) {
+      // La acción ya se ve, pero congelada. Nunca se reanuda de golpe.
+      const numero = Math.ceil(this.cuentaAtras / TIEMPOS.CUENTA_ATRAS_PAUSA);
+      dibujarTexto(ctx, String(numero), centro, CARTELES.Y_PRINCIPAL, {
+        tamano: TIPOGRAFIA.TAMANOS.TITULO,
+        color: HUD.VALOR_DESTACADO,
         alineacion: 'centro',
       });
     }
 
     if (this.fase === FASE.FIN_PARTIDA) {
-      ctx.fillStyle = 'rgba(5,4,11,0.6)';
+      ctx.fillStyle = FONDO.VELO_PANTALLA;
       ctx.fillRect(0, 0, PANTALLA.ANCHO, PANTALLA.ALTO);
 
-      dibujarTexto(ctx, 'FIN DE PARTIDA', centro, 270, {
+      dibujarTexto(ctx, 'FIN DE PARTIDA', centro, CARTELES.Y_TITULO, {
         tamano: TIPOGRAFIA.TAMANOS.ENCABEZADO,
         color: HUD.TEXTO_PRIMARIO,
         espaciado: TIPOGRAFIA.ESPACIADOS.ENCABEZADO,
         alineacion: 'centro',
       });
 
-      if (this.puntos >= this.record && this.puntos > 0) {
-        dibujarTexto(ctx, '¡NUEVO RÉCORD!', centro, 300, {
+      // Se compara contra el récord con el que se ENTRÓ a la partida.
+      if (this.puntos > this.recordAlEmpezar) {
+        dibujarTexto(ctx, '¡NUEVO RÉCORD!', centro, CARTELES.Y_PRINCIPAL, {
           tamano: TIPOGRAFIA.TAMANOS.OPCION_MENU,
           color: HUD.RECORD_NUEVO,
           espaciado: TIPOGRAFIA.ESPACIADOS.ENCABEZADO,
@@ -419,7 +566,7 @@ export class Partida {
       }
 
       if (this.temporizador <= 0) {
-        dibujarTexto(ctx, 'PULSA PARA JUGAR OTRA VEZ', centro, 380, {
+        dibujarTexto(ctx, 'PULSA PARA JUGAR OTRA VEZ', centro, CARTELES.Y_LLAMADA, {
           tamano: TIPOGRAFIA.TAMANOS.OPCION_MENU,
           color: COL_JUGADOR.CIAN,
           espaciado: TIPOGRAFIA.ESPACIADOS.ENCABEZADO,

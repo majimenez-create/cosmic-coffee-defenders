@@ -37,7 +37,7 @@ export function proyectilTocaCirculo(proyectil, x, y, radio) {
   const alcance = radio + proyectil.radio;
   const d2 = distanciaPuntoSegmento(
     x, y,
-    proyectil.x, proyectil.yAnterior,
+    proyectil.xAnterior, proyectil.yAnterior,
     proyectil.x, proyectil.y
   );
   return d2 <= alcance * alcance;

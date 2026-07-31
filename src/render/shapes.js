@@ -12,6 +12,20 @@
 
 import { JUGADOR, ENEMIGOS, DISPARO_JUGADOR, PELIGRO } from '../config/palette.js';
 
+/**
+ * Los degradados se crean UNA sola vez y se reutilizan. Crearlos dentro del
+ * bucle significaba fabricar más de mil objetos por segundo solo para
+ * tirarlos, que es justo lo que provoca los tirones de limpieza de memoria.
+ * Como todas las formas se dibujan centradas en (0,0), el mismo degradado
+ * vale para las 24 unidades de la escuadra.
+ */
+const cache = {};
+
+function conCache(clave, crear) {
+  if (!cache[clave]) cache[clave] = crear();
+  return cache[clave];
+}
+
 // ---------------------------------------------------------------------------
 // LA TAZA
 // ---------------------------------------------------------------------------
@@ -30,7 +44,8 @@ export function dibujarTaza(ctx, retroceso = 0, tiempo = 0) {
   ctx.translate(0, retroceso * 2); // el retroceso empuja la taza hacia abajo
 
   // 1. Plato / alerón. Da anchura y lectura de "nave estable".
-  ctx.fillStyle = degradadoVertical(ctx, -17, 17, JUGADOR.PORCELANA_CLARA, JUGADOR.SOMBRA_CERAMICA);
+  ctx.fillStyle = conCache('platoTaza', () =>
+    degradadoVertical(ctx, -17, 17, JUGADOR.PORCELANA_CLARA, JUGADOR.SOMBRA_CERAMICA));
   caminoRedondeado(ctx, [[-15, 12], [15, 12], [9, 17], [-9, 17]], 2);
   ctx.fill();
 
@@ -41,7 +56,8 @@ export function dibujarTaza(ctx, retroceso = 0, tiempo = 0) {
   rectanguloRedondeado(ctx, 5, 12, 4, 5, 1);
   ctx.fill();
 
-  const altoLlama = 4 + Math.abs(Math.sin(tiempo * 40)) * 5;
+  // La llama tiembla a 20 Hz: lo bastante rápido para leerse como fuego.
+  const altoLlama = 4 + Math.abs(Math.sin(tiempo * 20 * Math.PI * 2)) * 5;
   for (const lado of [-7, 7]) {
     ctx.fillStyle = JUGADOR.PROPULSOR;
     ctx.beginPath();
@@ -63,12 +79,14 @@ export function dibujarTaza(ctx, retroceso = 0, tiempo = 0) {
   // 3. Cuerpo. El degradado HORIZONTAL con la parada blanca descentrada al
   // 25 % es lo único que convierte un trapecio plano en un cilindro
   // cerámico. Es el truco más importante de todo el sprite.
-  const cuerpo = ctx.createLinearGradient(-11, 0, 11, 0);
-  cuerpo.addColorStop(0.00, JUGADOR.SOMBRA_CERAMICA);
-  cuerpo.addColorStop(0.25, '#FFFFFF');
-  cuerpo.addColorStop(0.60, JUGADOR.PORCELANA_MEDIA);
-  cuerpo.addColorStop(1.00, JUGADOR.SOMBRA_PROFUNDA);
-  ctx.fillStyle = cuerpo;
+  ctx.fillStyle = conCache('cuerpoTaza', () => {
+    const g = ctx.createLinearGradient(-11, 0, 11, 0);
+    g.addColorStop(0.00, JUGADOR.SOMBRA_CERAMICA);
+    g.addColorStop(0.25, JUGADOR.PORCELANA_ESPECULAR);
+    g.addColorStop(0.60, JUGADOR.PORCELANA_MEDIA);
+    g.addColorStop(1.00, JUGADOR.SOMBRA_PROFUNDA);
+    return g;
+  });
   caminoRedondeado(ctx, [[-11, -6], [11, -6], [7, 12], [-7, 12]], 3);
   ctx.fill();
 
@@ -95,7 +113,7 @@ export function dibujarTaza(ctx, retroceso = 0, tiempo = 0) {
 
   // 6. Labio de la taza: el cañón. Ese óvalo oscuro arriba es lo que hace
   // que se lea como taza aunque el jugador solo la vea de reojo.
-  ctx.fillStyle = '#FFFFFF';
+  ctx.fillStyle = JUGADOR.PORCELANA_ESPECULAR;
   ctx.strokeStyle = JUGADOR.SOMBRA_CERAMICA;
   ctx.lineWidth = 1.5;
   elipse(ctx, 0, -6, 11, 3.5);
@@ -153,7 +171,7 @@ export function dibujarIconoVida(ctx) {
   ctx.fillStyle = JUGADOR.CIAN;
   caminoRedondeado(ctx, [[-11, -6], [11, -6], [7, 12], [-7, 12]], 3);
   ctx.fill();
-  ctx.fillStyle = '#0A1A24';
+  ctx.fillStyle = JUGADOR.HUECO_ICONO;
   elipse(ctx, 0, -6, 8.5, 2.4);
   ctx.fill();
   ctx.strokeStyle = JUGADOR.CIAN;
@@ -182,11 +200,13 @@ export function dibujarGrano(ctx, balanceo = 0, escala = 1) {
   ctx.scale(escala, escala);
 
   // Cuerpo, con el foco de luz desplazado arriba a la izquierda.
-  const g = ctx.createRadialGradient(-3, -3, 1, 0, 0, 12);
-  g.addColorStop(0.00, c.brillo);
-  g.addColorStop(0.45, c.cuerpo);
-  g.addColorStop(1.00, c.sombra);
-  ctx.fillStyle = g;
+  ctx.fillStyle = conCache('cuerpoGrano', () => {
+    const g = ctx.createRadialGradient(-3, -3, 1, 0, 0, 12);
+    g.addColorStop(0.00, c.brillo);
+    g.addColorStop(0.45, c.cuerpo);
+    g.addColorStop(1.00, c.sombra);
+    return g;
+  });
   elipse(ctx, 0, 0, 11, 9);
   ctx.fill();
 
@@ -258,11 +278,21 @@ export function dibujarDisparoJugador(ctx) {
  * Forma, proporción, dirección, brillo y animación: cinco canales distintos
  * para que jamás se confunda con un disparo del jugador.
  */
-export function dibujarDisparoEnemigo(ctx, tiempo = 0) {
+export function dibujarDisparoEnemigo(ctx, tiempo = 0, culpable = false) {
   const pulso = 1 + 0.125 * Math.sin(tiempo * 50);
   ctx.save();
   ctx.rotate(tiempo * Math.PI);
   ctx.scale(pulso, pulso);
+
+  // El proyectil que ha matado al jugador se queda marcado con un halo, para
+  // que se vea qué ha sido. Toda muerte debe dejar rastro.
+  if (culpable) {
+    ctx.strokeStyle = PELIGRO.PROYECTIL;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 9, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 
   ctx.fillStyle = PELIGRO.PROYECTIL;
   rombo(ctx, 0, 0, 3.5, 3.5);

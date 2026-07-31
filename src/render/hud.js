@@ -17,12 +17,15 @@
  */
 
 import { PANTALLA, HUD_LAYOUT } from '../config/balance.js';
-import { HUD, TIPOGRAFIA } from '../config/palette.js';
+import { HUD, FONDO, TIPOGRAFIA } from '../config/palette.js';
 import { dibujarTexto, dibujarNumero } from './text.js';
 import { dibujarIconoVida } from './shapes.js';
 
 const T = TIPOGRAFIA.TAMANOS;
 const E = TIPOGRAFIA.ESPACIADOS;
+
+/** Los degradados de contraste, creados una sola vez. */
+const velos = { arriba: null, abajo: null };
 
 /** Formatea 18700 como "018.700": ancho fijo, no baila al subir de cifra. */
 function formatear(puntos) {
@@ -34,25 +37,28 @@ export function dibujarHud(ctx, estado) {
   const { puntos, record, vidas, fase, puntosMostrados } = estado;
 
   // Degradado de contraste: sin caja, pero garantiza que el texto se lea
-  // sobre cualquier fondo.
-  const arriba = ctx.createLinearGradient(0, 0, 0, 44);
-  arriba.addColorStop(0, 'rgba(5,4,11,0.5)');
-  arriba.addColorStop(1, 'rgba(5,4,11,0)');
-  ctx.fillStyle = arriba;
-  ctx.fillRect(0, 0, PANTALLA.ANCHO, 44);
+  // sobre cualquier fondo. Se crean una sola vez, no en cada fotograma.
+  const alto = HUD_LAYOUT.BANDA_SUPERIOR;
+  if (!velos.arriba) {
+    velos.arriba = ctx.createLinearGradient(0, 0, 0, alto);
+    velos.arriba.addColorStop(0, FONDO.VELO_HUD);
+    velos.arriba.addColorStop(1, FONDO.VELO_TRANSPARENTE);
 
-  const abajo = ctx.createLinearGradient(0, PANTALLA.ALTO, 0, PANTALLA.ALTO - 44);
-  abajo.addColorStop(0, 'rgba(5,4,11,0.5)');
-  abajo.addColorStop(1, 'rgba(5,4,11,0)');
-  ctx.fillStyle = abajo;
-  ctx.fillRect(0, PANTALLA.ALTO - 44, PANTALLA.ANCHO, 44);
+    velos.abajo = ctx.createLinearGradient(0, PANTALLA.ALTO, 0, PANTALLA.ALTO - alto);
+    velos.abajo.addColorStop(0, FONDO.VELO_HUD);
+    velos.abajo.addColorStop(1, FONDO.VELO_TRANSPARENTE);
+  }
+  ctx.fillStyle = velos.arriba;
+  ctx.fillRect(0, 0, PANTALLA.ANCHO, alto);
+  ctx.fillStyle = velos.abajo;
+  ctx.fillRect(0, PANTALLA.ALTO - alto, PANTALLA.ANCHO, alto);
 
   // --- Puntuación (arriba izquierda) ---
   dibujarTexto(ctx, 'PUNTOS', 10, 11, {
     tamano: T.ETIQUETA_HUD, color: HUD.ETIQUETA, espaciado: E.ETIQUETA,
   });
   dibujarNumero(ctx, formatear(puntosMostrados ?? puntos), 10, 27, {
-    tamano: 16,
+    tamano: T.PUNTUACION,
     color: puntosMostrados < puntos ? HUD.VALOR_DESTACADO : HUD.TEXTO_PRIMARIO,
   });
 
@@ -62,7 +68,7 @@ export function dibujarHud(ctx, estado) {
     alineacion: 'centro',
   });
   dibujarNumero(ctx, formatear(record), PANTALLA.ANCHO / 2, 26, {
-    tamano: 12, color: HUD.VALOR_DESTACADO, alineacion: 'centro',
+    tamano: T.RECORD, color: HUD.VALOR_DESTACADO, alineacion: 'centro',
   });
 
   // --- Vidas (abajo izquierda) ---
@@ -88,9 +94,3 @@ export function dibujarHud(ctx, estado) {
       espaciado: E.VALOR, alineacion: 'derecha',
     });
 }
-
-/** El área realmente jugable, entre las dos bandas del HUD. */
-export const AREA_JUEGO = {
-  ARRIBA: HUD_LAYOUT.BANDA_SUPERIOR,
-  ABAJO: PANTALLA.ALTO - HUD_LAYOUT.BANDA_INFERIOR,
-};

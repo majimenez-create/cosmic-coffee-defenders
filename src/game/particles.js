@@ -12,7 +12,7 @@
  */
 
 import { EFECTOS } from '../config/balance.js';
-import { EXPLOSION } from '../config/palette.js';
+import { EXPLOSION, JUGADOR } from '../config/palette.js';
 
 class Particula {
   constructor() {
@@ -22,25 +22,50 @@ class Particula {
     this.radio = 1;
     this.vida = 0;
     this.vidaTotal = 1;
-    this.color = '#FFF';
+    this.color = EXPLOSION.DESTELLO;
     this.gravedad = 0;
     this.rozamiento = 0.9;
+    // Las partículas oscuras (café) no pueden dibujarse en modo aditivo: un
+    // color oscuro sumado a un fondo oscuro no se ve. Van en un segundo pase.
+    this.aditiva = true;
   }
 }
 
 export class Particulas {
   constructor() {
     this.lista = Array.from({ length: EFECTOS.PARTICULAS_MAXIMAS }, () => new Particula());
-    this.anillos = [];
+    this.anillos = Array.from({ length: EFECTOS.ANILLOS_MAXIMOS }, () => ({
+      activo: false, x: 0, y: 0, radio: 0, radioMax: 0, vida: 0, vidaTotal: 1,
+    }));
   }
 
   _libre() {
     for (const p of this.lista) if (!p.activa) return p;
-    // Si no queda ninguna libre se recicla la más antigua: mejor perder una
-    // chispa vieja que dejar de dibujar la explosión nueva.
-    let masVieja = this.lista[0];
-    for (const p of this.lista) if (p.vida < masVieja.vida) masVieja = p;
-    return masVieja;
+    // Si no queda ninguna libre se recicla la que está más cerca de apagarse:
+    // mejor perder una chispa que ya iba a desaparecer que dejar de dibujar
+    // la explosión nueva.
+    let masCercaDeApagarse = this.lista[0];
+    for (const p of this.lista) {
+      if (p.vida < masCercaDeApagarse.vida) masCercaDeApagarse = p;
+    }
+    return masCercaDeApagarse;
+  }
+
+  /** Los anillos también se reutilizan, por coherencia con las partículas. */
+  _anilloLibre() {
+    for (const a of this.anillos) if (!a.activo) return a;
+    return this.anillos[0];
+  }
+
+  _lanzarAnillo(x, y, radio, radioMax, vida) {
+    const a = this._anilloLibre();
+    a.activo = true;
+    a.x = x;
+    a.y = y;
+    a.radio = radio;
+    a.radioMax = radioMax;
+    a.vida = vida;
+    a.vidaTotal = vida;
   }
 
   _lanzar(x, y, opciones) {
@@ -56,6 +81,7 @@ export class Particulas {
     p.color = opciones.color;
     p.gravedad = opciones.gravedad ?? 0;
     p.rozamiento = opciones.rozamiento ?? 0.9;
+    p.aditiva = opciones.aditiva ?? true;
   }
 
   /** Explosión de un enemigo: chispas doradas y esquirlas de su color. */
@@ -87,7 +113,7 @@ export class Particulas {
       });
     }
 
-    this.anillos.push({ x, y, radio: 4, radioMax: 22, vida: 0.18, vidaTotal: 0.18 });
+    this._lanzarAnillo(x, y, 4, 22, 0.18);
   }
 
   /**
@@ -103,7 +129,7 @@ export class Particulas {
         vy: Math.sin(angulo) * velocidad,
         radio: 1.5 + Math.random() * 2,
         vida: 1.1,
-        color: Math.random() < 0.5 ? EXPLOSION.ESQUIRLA_PORCELANA : '#AFC0D6',
+        color: Math.random() < 0.5 ? EXPLOSION.ESQUIRLA_PORCELANA : JUGADOR.SOMBRA_CERAMICA,
         gravedad: 220,
         rozamiento: 1,
       });
@@ -120,6 +146,7 @@ export class Particulas {
         color: Math.random() < 0.5 ? EXPLOSION.GOTA_CAFE : EXPLOSION.HUMO_CAFE,
         gravedad: 220,
         rozamiento: 1,
+        aditiva: false, // el café es oscuro: en modo aditivo no se vería
       });
     }
 
@@ -131,12 +158,12 @@ export class Particulas {
         vy: Math.sin(angulo) * velocidad,
         radio: 1.5,
         vida: 0.6,
-        color: '#3FD2FF',
+        color: JUGADOR.CIAN,
         rozamiento: 0.88,
       });
     }
 
-    this.anillos.push({ x, y, radio: 5, radioMax: 40, vida: 0.3, vidaTotal: 0.3 });
+    this._lanzarAnillo(x, y, 5, 40, 0.3);
   }
 
   /** Chispas pequeñas de un impacto que no mata. */
@@ -170,21 +197,32 @@ export class Particulas {
       }
     }
 
-    for (let i = this.anillos.length - 1; i >= 0; i--) {
-      const a = this.anillos[i];
+    for (const a of this.anillos) {
+      if (!a.activo) continue;
       a.vida -= dt;
-      if (a.vida <= 0) this.anillos.splice(i, 1);
+      if (a.vida <= 0) a.activo = false;
     }
   }
 
   dibujar(ctx) {
     ctx.save();
-    // Composición aditiva: las chispas que se solapan se suman y dan un
+
+    // Primer pase, en modo normal: lo oscuro (el café derramado).
+    for (const p of this.lista) {
+      if (!p.activa || p.aditiva) continue;
+      ctx.globalAlpha = Math.max(0, p.vida / p.vidaTotal);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.radio, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Segundo pase, aditivo: las chispas que se solapan se suman y dan un
     // blanco caliente en el centro de la explosión, gratis.
     ctx.globalCompositeOperation = 'lighter';
 
     for (const p of this.lista) {
-      if (!p.activa) continue;
+      if (!p.activa || !p.aditiva) continue;
       ctx.globalAlpha = Math.max(0, p.vida / p.vidaTotal);
       ctx.fillStyle = p.color;
       ctx.beginPath();
@@ -193,6 +231,7 @@ export class Particulas {
     }
 
     for (const a of this.anillos) {
+      if (!a.activo) continue;
       const avance = 1 - a.vida / a.vidaTotal;
       ctx.globalAlpha = 1 - avance;
       ctx.strokeStyle = EXPLOSION.ANILLO_CHOQUE;
@@ -207,6 +246,6 @@ export class Particulas {
 
   limpiar() {
     for (const p of this.lista) p.activa = false;
-    this.anillos = [];
+    for (const a of this.anillos) a.activo = false;
   }
 }

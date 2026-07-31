@@ -7,11 +7,13 @@
  *
  * ¿Por qué es tan importante? La biblia exige que los patrones de ataque sean
  * aprendibles. Eso solo se cumple si un ataque recorre siempre exactamente el
- * mismo camino en un móvil viejo y en un ordenador rápido. Si el juego pensara
- * "lo que dé tiempo en cada fotograma", la misma coreografía recorrería
- * distancias distintas en cada máquina y el juego sería más fácil o imposible
- * según el hardware. Además hace que el ranking mundial compare partidas
- * comparables.
+ * mismo camino en un móvil viejo y en un ordenador rápido. También hace que
+ * el ranking mundial compare partidas comparables.
+ *
+ * El bucle NUNCA se detiene solo. Si se detuviera al perder el foco, habría
+ * que acordarse de arrancarlo otra vez, y olvidarlo deja el juego congelado
+ * sin forma de recuperarlo salvo recargando. En su lugar avisa a quien
+ * corresponda, y es el juego quien decide ponerse en pausa.
  */
 
 import { PANTALLA } from '../config/balance.js';
@@ -21,25 +23,33 @@ const PASO_S = 1 / PANTALLA.FPS_LOGICOS;
 
 export class Bucle {
   /**
-   * @param {(dt:number) => void} actualizar  Un paso de lógica. Recibe siempre 1/60.
+   * @param {(dt:number) => void} actualizar        Un paso de lógica. Recibe siempre 1/60.
    * @param {(alpha:number) => void} dibujar
+   * @param {(dt:number) => void} [actualizarEfectos]
+   *        Lo único que sigue avanzando durante la congelación de impacto.
    */
-  constructor(actualizar, dibujar) {
+  constructor(actualizar, dibujar, actualizarEfectos = null) {
     this.actualizar = actualizar;
     this.dibujar = dibujar;
+    this.actualizarEfectos = actualizarEfectos;
+
+    /** Se llama cuando el jugador deja de mirar la pantalla. */
+    this.alPerderFoco = null;
 
     this.corriendo = false;
     this.acumulador = 0;
     this.ultimoInstante = 0;
-    this.escalaTiempo = 1;   // 1 normal, 0 en pausa o congelación de impacto
+    this.escalaTiempo = 1;
+    this._congeladoHasta = 0;
     this._id = null;
 
-    // Si la pestaña se oculta, el navegador deja de dibujar y al volver
-    // entregaría un salto de varios segundos. Se pausa y se limpia el reloj.
+    // Al ocultarse la pestaña el navegador deja de entregar fotogramas por su
+    // cuenta; al volver, el tope de pasos evita el salto de simulación. Lo
+    // único que hace falta aquí es avisar para que el juego se pause.
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) this.pausar();
+      if (document.hidden) this.alPerderFoco?.();
     });
-    window.addEventListener('blur', () => this.pausar());
+    window.addEventListener('blur', () => this.alPerderFoco?.());
   }
 
   arrancar() {
@@ -50,7 +60,7 @@ export class Bucle {
     this._id = requestAnimationFrame((t) => this._frame(t));
   }
 
-  pausar() {
+  detener() {
     this.corriendo = false;
     if (this._id !== null) cancelAnimationFrame(this._id);
     this._id = null;
@@ -69,20 +79,22 @@ export class Bucle {
     this.ultimoInstante = instante;
 
     // Tope de seguridad: nunca se procesan más de 5 pasos seguidos. Sin esto,
-    // volver de una pestaña en segundo plano dispararía cientos de pasos de
-    // golpe y el jugador moriría sin haber visto nada.
+    // volver de otra pestaña dispararía cientos de pasos de golpe y el
+    // jugador moriría sin haber visto nada.
     const maximo = PASO_MS * PANTALLA.PASOS_MAXIMOS_POR_FRAME;
     if (transcurrido > maximo) transcurrido = maximo;
 
-    const congelado = this._congeladoHasta && instante < this._congeladoHasta;
-    if (!congelado) {
-      this.acumulador += transcurrido * this.escalaTiempo;
-      while (this.acumulador >= PASO_MS) {
-        this.actualizar(PASO_S);
-        this.acumulador -= PASO_MS;
-      }
+    this.acumulador += transcurrido * this.escalaTiempo;
+    const congelado = instante < this._congeladoHasta;
+
+    while (this.acumulador >= PASO_MS) {
+      this.acumulador -= PASO_MS;
+      // Durante la congelación se sigue animando la explosión que la ha
+      // provocado. Si se congelara TODO parecería un tirón, no un impacto.
+      if (congelado) this.actualizarEfectos?.(PASO_S);
+      else this.actualizar(PASO_S);
     }
 
-    this.dibujar(this.acumulador / PASO_MS);
+    this.dibujar();
   }
 }
