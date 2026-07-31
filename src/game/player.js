@@ -10,7 +10,9 @@
  * tiros, esperas a que salgan de pantalla. Esa es la decisión interesante.
  */
 
-import { JUGADOR, DISPARO, ZONA_JUGADOR, PANTALLA, TACTIL } from '../config/balance.js';
+import {
+  JUGADOR, DISPARO, ZONA_JUGADOR, PANTALLA, TACTIL, MODO_DISPARO,
+} from '../config/balance.js';
 
 export const ESTADO = {
   VIVO: 'vivo',
@@ -19,8 +21,13 @@ export const ESTADO = {
 };
 
 export class Taza {
-  constructor(proyectiles) {
+  /**
+   * @param {import('./bullets.js').Proyectiles} proyectiles
+   * @param {import('../services/settings.js').Ajustes} [ajustes]
+   */
+  constructor(proyectiles, ajustes = null) {
     this.proyectiles = proyectiles;
+    this.ajustes = ajustes;
     this.reiniciar();
   }
 
@@ -95,7 +102,18 @@ export class Taza {
     // sienta obediente.
     if (entrada.disparoPulsado) this._buferDisparo = DISPARO.BUFER_MS / 1000;
 
-    const quiereDisparar = entrada.disparoMantenido || this._buferDisparo > 0;
+    // Los tres modos disparan a la MISMA cadencia máxima, así que ninguno da
+    // ventaja y los tres valen para el ranking. El automático es también el
+    // modo por defecto en móvil, donde pedir un segundo pulgar solo taparía
+    // pantalla sin añadir ninguna decisión interesante.
+    const modo = this.ajustes?.get('modoDisparo') ?? MODO_DISPARO.MANTENIDO;
+    const enTactil = entrada.hayTactil;
+
+    let quiereDisparar;
+    if (modo === MODO_DISPARO.AUTOMATICO || enTactil) quiereDisparar = true;
+    else if (modo === MODO_DISPARO.PULSADO) quiereDisparar = this._buferDisparo > 0;
+    else quiereDisparar = entrada.disparoMantenido || this._buferDisparo > 0;
+
     if (!quiereDisparar || this._recarga > 0) return;
 
     // El tope de proyectiles en pantalla es lo que regula la cadencia real.

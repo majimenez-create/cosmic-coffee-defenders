@@ -514,6 +514,10 @@ export const TECLAS = {
   PANTALLA_COMPLETA: ['KeyF'],
   CONFIRMAR: ['Enter', 'Space'],
   AYUDA: ['KeyH'],
+  AJUSTES: ['KeyO'],
+  // Solo para navegar menús: la taza nunca sube ni baja.
+  ARRIBA: ['ArrowUp', 'KeyW'],
+  ABAJO: ['ArrowDown', 'KeyS'],
 };
 
 export const TACTIL = {

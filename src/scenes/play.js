@@ -12,7 +12,7 @@
 import {
   PANTALLA, DISPARO, DISPARO_ENEMIGO, ATAQUES, PUNTUACION, PROGRESION,
   CICLO_FASES, JUGADOR as CFG_JUGADOR, EFECTOS, TIEMPOS, CARTELES, FORMACION,
-  BONUS, JEFE,
+  BONUS, JEFE, ALTO_CONTRASTE,
 } from '../config/balance.js';
 import {
   HUD, FONDO, JUGADOR as COL_JUGADOR, ENEMIGOS as COL_ENEMIGOS, TIPOGRAFIA,
@@ -75,9 +75,10 @@ export class Partida {
    * @param {import('../render/background.js').Fondo} fondo
    * @param {import('../render/glow.js').Resplandor} resplandor
    */
-  constructor(entrada, audio, fondo, resplandor) {
+  constructor(entrada, audio, fondo, resplandor, ajustes) {
     this.entrada = entrada;
     this.audio = audio;
+    this.ajustes = ajustes;
     // El fondo y los halos se comparten con la portada: son caros de preparar
     // y no tiene sentido tener dos copias.
     this.fondo = fondo;
@@ -92,7 +93,7 @@ export class Partida {
     this.formacion = new Formacion(this.caminos);
     this.bonus = new FaseBonus(this.caminos);
     this.jefe = new Jefe();
-    this.taza = new Taza(this.disparosJugador);
+    this.taza = new Taza(this.disparosJugador, ajustes);
 
     this.record = leerRecord();
     // Reservados de antemano, como las partículas: nada de crear objetos a
@@ -179,9 +180,14 @@ export class Partida {
 
     // Las primeras fases avisan más tiempo antes de cada ataque, y con eso
     // basta para que cualquiera aprenda a leer los picados.
-    this.formacion.telegrafiado = this._esFaseFacil()
+    // La alta legibilidad no solo cambia colores: también da más tiempo, porque
+    // quien la activa suele necesitar las dos cosas.
+    const margen = this.ajustes.get('altoContraste')
+      ? ALTO_CONTRASTE.MULTIPLICADOR_TELEGRAFIADO
+      : 1;
+    this.formacion.telegrafiado = (this._esFaseFacil()
       ? ATAQUES.TELEGRAFIADO_PRIMERAS_FASES
-      : ATAQUES.TELEGRAFIADO;
+      : ATAQUES.TELEGRAFIADO) * margen;
 
     this.fase = FASE.INTRO;
     this.temporizador = TIEMPOS.INTRO_FASE;
@@ -651,6 +657,11 @@ export class Partida {
   }
 
   _sacudir(config) {
+    // El jugador puede desactivar el temblor por completo, y no pierde ninguna
+    // información al hacerlo: todo lo que la sacudida comunica está también en
+    // la explosión y en el sonido.
+    if (!this.ajustes.get('sacudidaPantalla')) return;
+
     // Se guarda también la duración total: sin ella, una sacudida corta
     // empezaría ya casi apagada y no se vería.
     if (config.amplitud >= this.sacudidaAmplitud || this.sacudida <= 0) {
@@ -825,7 +836,12 @@ export class Partida {
       // Dos canales, no uno: parpadeo Y anillo que se contrae marcando el
       // tiempo que queda. Solo con el parpadeo, el jugador no sabe cuánto le
       // falta para volver a ser vulnerable.
-      const hz = CFG_JUGADOR.PARPADEO_INVULNERABLE;
+      // Con "reducir destellos" el parpadeo baja de 8 a 2,5 veces por segundo,
+      // por debajo del umbral de seguridad fotosensible. No se pierde
+      // información: el anillo sigue marcando el tiempo restante.
+      const hz = this.ajustes.get('reducirDestellos')
+        ? ALTO_CONTRASTE.FRECUENCIA_PARPADEO_MAXIMA * 0.83
+        : CFG_JUGADOR.PARPADEO_INVULNERABLE;
       ctx.globalAlpha = Math.sin(this.tiempo * hz * Math.PI * 2) > 0 ? 1 : 0.35;
 
       const anillo = CFG_JUGADOR.ANILLO_INVULNERABLE;
@@ -865,11 +881,15 @@ export class Partida {
       if (!p.activo) continue;
       // El halo del proyectil enemigo nunca baja de este tamaño, en ningún
       // nivel de calidad: es lo que puede matarte y tiene que verse siempre.
-      this.resplandor.halo(ctx, p.x, p.y, 11, COL_PELIGRO.PROYECTIL, p.opacidad);
+      const legible = this.ajustes.get('altoContraste');
+      this.resplandor.halo(ctx, p.x, p.y, legible ? 14 : 11, COL_PELIGRO.PROYECTIL, p.opacidad);
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.globalAlpha = p.opacidad;
-      dibujarDisparoEnemigo(ctx, p.edad, p.culpable);
+      // En alta legibilidad el proyectil crece y gana un anillo blanco. Se
+      // pierde algo de elegancia y se gana claridad: es decisión del jugador.
+      if (legible) ctx.scale(1.35, 1.35);
+      dibujarDisparoEnemigo(ctx, p.edad, p.culpable, legible);
       ctx.restore();
     }
   }

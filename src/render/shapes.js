@@ -481,11 +481,21 @@ export function dibujarDisparoJugador(ctx) {
  * Forma, proporción, dirección, brillo y animación: cinco canales distintos
  * para que jamás se confunda con un disparo del jugador.
  */
-export function dibujarDisparoEnemigo(ctx, tiempo = 0, culpable = false) {
+export function dibujarDisparoEnemigo(ctx, tiempo = 0, culpable = false, altoContraste = false) {
   const pulso = 1 + 0.125 * Math.sin(tiempo * 50);
   ctx.save();
   ctx.rotate(tiempo * Math.PI);
   ctx.scale(pulso, pulso);
+
+  // Anillo blanco exterior: en alta legibilidad, el proyectil se separa del
+  // fondo por brillo además de por color.
+  if (altoContraste) {
+    ctx.strokeStyle = PELIGRO.ANILLO_ALTO_CONTRASTE;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 6, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 
   // El proyectil que ha matado al jugador se queda marcado con un halo, para
   // que se vea qué ha sido. Toda muerte debe dejar rastro.

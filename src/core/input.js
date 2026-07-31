@@ -72,8 +72,18 @@ export class Entrada {
       this._primerGesto();
       this._teclas.add(codigo);
 
-      if (TECLAS.IZQUIERDA.includes(codigo)) this._empujarDireccion(-1);
-      if (TECLAS.DERECHA.includes(codigo)) this._empujarDireccion(1);
+      if (TECLAS.IZQUIERDA.includes(codigo)) {
+        this._empujarDireccion(-1);
+        this.izquierdaPulsada = true;
+      }
+      if (TECLAS.DERECHA.includes(codigo)) {
+        this._empujarDireccion(1);
+        this.derechaPulsada = true;
+      }
+      // Arriba y abajo solo se usan para navegar menús, no para jugar: la taza
+      // nunca sube ni baja.
+      if (TECLAS.ARRIBA.includes(codigo)) this.arribaPulsado = true;
+      if (TECLAS.ABAJO.includes(codigo)) this.abajoPulsado = true;
       if (TECLAS.DISPARO.includes(codigo)) {
         this.disparoMantenido = true;
         this.disparoPulsado = true;
@@ -82,6 +92,7 @@ export class Entrada {
       if (TECLAS.CONFIRMAR.includes(codigo)) this.confirmarPulsado = true;
       if (TECLAS.SILENCIAR.includes(codigo)) this.silenciarPulsado = true;
       if (TECLAS.AYUDA.includes(codigo)) this.ayudaPulsada = true;
+      if (TECLAS.AJUSTES.includes(codigo)) this.ajustesPulsado = true;
     });
 
     window.addEventListener('keyup', (e) => {
@@ -167,6 +178,7 @@ export class Entrada {
       e.preventDefault();
 
       const pos = this.lienzo.aCoordenadasLogicas(e.clientX, e.clientY);
+      // La sensibilidad la elige el jugador en Ajustes.
       const destino = this._anclaTaza + (pos.x - this._anclaDedo) * this.sensibilidad;
 
       const min = ZONA_JUGADOR.MARGEN_IZQUIERDO;
@@ -257,6 +269,11 @@ export class Entrada {
     this.confirmarPulsado = false;
     this.silenciarPulsado = false;
     this.ayudaPulsada = false;
+    this.ajustesPulsado = false;
+    this.izquierdaPulsada = false;
+    this.derechaPulsada = false;
+    this.arribaPulsado = false;
+    this.abajoPulsado = false;
   }
 
   limpiar() {

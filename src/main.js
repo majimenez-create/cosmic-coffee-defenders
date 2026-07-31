@@ -16,6 +16,8 @@ import { Fondo } from './render/background.js';
 import { Resplandor } from './render/glow.js';
 import { Portada } from './scenes/title.js';
 import { Partida } from './scenes/play.js';
+import { PantallaAjustes } from './scenes/settings.js';
+import { Ajustes } from './services/settings.js';
 import {
   JUGADOR as COL_JUGADOR, DISPARO_JUGADOR, PELIGRO, ENEMIGOS,
 } from './config/palette.js';
@@ -33,9 +35,26 @@ resplandor.precalentar([
   ENEMIGOS.grano.cuerpo, ENEMIGOS.avispa.cuerpo, ENEMIGOS.cafetera.cuerpo,
 ]);
 
+// Los ajustes se cargan antes que nada y se aplican en cuanto cambian.
+const ajustes = new Ajustes();
+ajustes.alCambiar = () => aplicarAjustes();
+
+function aplicarAjustes() {
+  audio.ponerVolumenes(
+    ajustes.get('volumenGeneral') / 100,
+    ajustes.get('volumenMusica') / 100,
+    ajustes.get('volumenEfectos') / 100
+  );
+  entrada.sensibilidad = ajustes.get('sensibilidadTactil');
+  // La velocidad reducida es la única opción que cambia la dificultad real,
+  // así que se aplica al propio reloj del juego.
+  bucle.escalaTiempo = ajustes.get('velocidadJuego');
+}
+
 const escenas = new GestorEscenas();
-escenas.registrar('portada', new Portada(entrada, audio, fondo, resplandor));
-escenas.registrar('partida', new Partida(entrada, audio, fondo, resplandor));
+escenas.registrar('portada', new Portada(entrada, audio, fondo, resplandor, ajustes));
+escenas.registrar('partida', new Partida(entrada, audio, fondo, resplandor, ajustes));
+escenas.registrar('ajustes', new PantallaAjustes(entrada, audio, fondo, ajustes));
 
 // El navegador prohíbe hacer sonar nada hasta que el jugador toca algo. En
 // lugar de intentarlo y provocar un error en la consola, el motor de audio se
@@ -59,6 +78,7 @@ const bucle = new Bucle(
 // Nunca se reanuda solo: primero la cuenta atrás.
 bucle.alPerderFoco = () => escenas.perderFoco();
 
+aplicarAjustes();
 escenas.ir('portada');
 bucle.arrancar();
 

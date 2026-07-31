@@ -116,6 +116,17 @@ export class Audio {
     for (let i = 0; i < muestras; i++) datos[i] = Math.random() * 2 - 1;
   }
 
+  /** Los tres mandos de volumen, de 0 a 1. */
+  ponerVolumenes(general, musica, efectos) {
+    this.volumenGeneral = general;
+    this.volumenMusica = musica;
+    this.volumenEfectos = efectos;
+    if (!this.listo) return;
+    if (!this.silenciado) this.general.gain.value = general;
+    this.musica.gain.value = musica;
+    this.efectos.gain.value = efectos;
+  }
+
   reanudar() {
     if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
     // Se resincroniza el compás. Si no, al volver de una pausa larga el

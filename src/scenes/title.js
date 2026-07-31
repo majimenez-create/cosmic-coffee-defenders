@@ -31,11 +31,12 @@ export class Portada {
    * @param {import('../render/background.js').Fondo} fondo
    * @param {import('../render/glow.js').Resplandor} resplandor
    */
-  constructor(entrada, audio, fondo, resplandor) {
+  constructor(entrada, audio, fondo, resplandor, ajustes) {
     this.entrada = entrada;
     this.audio = audio;
     this.fondo = fondo;
     this.resplandor = resplandor;
+    this.ajustes = ajustes;
     this.tiempo = 0;
     this.vista = VISTA.PORTADA;
   }
@@ -63,9 +64,11 @@ export class Portada {
       return;
     }
 
-    // La ayuda se abre con una tecla concreta; empezar, con cualquier otra.
+    // La ayuda y los ajustes tienen su tecla; empezar, cualquier otra.
     if (this.entrada.ayudaPulsada) {
       this.vista = VISTA.AYUDA;
+    } else if (this.entrada.ajustesPulsado) {
+      this.ir('ajustes');
     } else if (this.entrada.confirmarPulsado || this.entrada.disparoPulsado ||
                this.entrada.hayTactil) {
       this.audio.comenzar();
@@ -160,10 +163,19 @@ export class Portada {
       tamano: T.ETIQUETA_HUD, color: HUD.ETIQUETA,
       espaciado: E.ETIQUETA, alineacion: 'centro',
     });
-    dibujarTexto(ctx, 'M · SILENCIAR', centro, 578, {
+    dibujarTexto(ctx, 'O · AJUSTES        M · SILENCIAR', centro, 578, {
       tamano: T.ETIQUETA_HUD, color: HUD.ETIQUETA,
       espaciado: E.ETIQUETA, alineacion: 'centro',
     });
+
+    // Si la partida no va a contar para el ranking, se dice aquí y ahora, sin
+    // esperar a que el jugador haga un récord y se lleve la decepción.
+    if (!this.ajustes.puntuaValida) {
+      dibujarTexto(ctx, 'MODO ASISTIDO · NO CUENTA PARA EL RANKING', centro, 596, {
+        tamano: T.ETIQUETA_HUD, color: HUD.VALOR_DESTACADO,
+        espaciado: E.ETIQUETA, alineacion: 'centro', alpha: 0.9,
+      });
+    }
 
     if (this.sinAlmacenamiento) {
       dibujarTexto(ctx, 'EL RÉCORD NO SE GUARDARÁ EN ESTE NAVEGADOR', centro, 612, {
