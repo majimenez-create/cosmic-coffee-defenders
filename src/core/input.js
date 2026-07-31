@@ -81,6 +81,7 @@ export class Entrada {
       if (TECLAS.PAUSA.includes(codigo)) this.pausaPulsada = true;
       if (TECLAS.CONFIRMAR.includes(codigo)) this.confirmarPulsado = true;
       if (TECLAS.SILENCIAR.includes(codigo)) this.silenciarPulsado = true;
+      if (TECLAS.AYUDA.includes(codigo)) this.ayudaPulsada = true;
     });
 
     window.addEventListener('keyup', (e) => {
@@ -255,6 +256,7 @@ export class Entrada {
     this.pausaPulsada = false;
     this.confirmarPulsado = false;
     this.silenciarPulsado = false;
+    this.ayudaPulsada = false;
   }
 
   limpiar() {

@@ -63,19 +63,16 @@ export class Partida {
   /**
    * @param {import('../core/input.js').Entrada} entrada
    * @param {import('../core/audio.js').Audio} audio
+   * @param {import('../render/background.js').Fondo} fondo
+   * @param {import('../render/glow.js').Resplandor} resplandor
    */
-  constructor(entrada, audio) {
+  constructor(entrada, audio, fondo, resplandor) {
     this.entrada = entrada;
     this.audio = audio;
-
-    this.fondo = new Fondo();
-    this.resplandor = new Resplandor();
-    // Se preparan los halos al arrancar, no en mitad de la acción: así la
-    // primera explosión no provoca un microtirón justo cuando importa.
-    this.resplandor.precalentar([
-      COL_JUGADOR.CIAN, COL_DISPARO.HALO, COL_PELIGRO.PROYECTIL,
-      COL_ENEMIGOS.grano.cuerpo, COL_ENEMIGOS.avispa.cuerpo, COL_ENEMIGOS.cafetera.cuerpo,
-    ]);
+    // El fondo y los halos se comparten con la portada: son caros de preparar
+    // y no tiene sentido tener dos copias.
+    this.fondo = fondo;
+    this.resplandor = resplandor;
     this.particulas = new Particulas();
     this.disparosJugador = new Proyectiles(DISPARO.MAXIMO_EN_PANTALLA, false);
     this.disparosEnemigos = new Proyectiles(DISPARO_ENEMIGO.MAXIMO_EN_PANTALLA, true);
@@ -97,7 +94,11 @@ export class Partida {
     this.sacudidaAmplitud = 0;
     this.congelacion = 0;
     this.tiempo = 0;
+  }
 
+  /** Se llama cada vez que el gestor de escenas entra en la partida. */
+  entrar() {
+    this.record = leerRecord();
     this.empezar();
   }
 
@@ -246,6 +247,13 @@ export class Partida {
 
       case FASE.FIN_PARTIDA:
         this.temporizador -= dt;
+        // Volver a la portada es una alternativa, nunca una obligación: la vía
+        // rápida sigue siendo reintentar con una sola pulsación.
+        if (this.entrada.pausaPulsada) {
+          this.entrada.finPaso();
+          this.ir('portada');
+          return;
+        }
         // El bloqueo inicial existe para que quien esté machacando el disparo
         // no se salte su propia puntuación sin verla. Pasado ese margen, la
         // pulsación se atiende aunque se hubiera hecho antes: nunca se come
@@ -765,6 +773,12 @@ export class Partida {
           espaciado: TIPOGRAFIA.ESPACIADOS.ENCABEZADO,
           alineacion: 'centro',
           alpha: Math.sin(this.tiempo * 4) > -0.3 ? 1 : 0.25,
+        });
+        dibujarTexto(ctx, 'P · VOLVER AL INICIO', centro, CARTELES.Y_LLAMADA + 30, {
+          tamano: TIPOGRAFIA.TAMANOS.ETIQUETA_HUD,
+          color: HUD.ETIQUETA,
+          espaciado: TIPOGRAFIA.ESPACIADOS.ETIQUETA,
+          alineacion: 'centro',
         });
       }
     }

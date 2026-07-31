@@ -505,6 +505,7 @@ export const TECLAS = {
   SILENCIAR: ['KeyM'],
   PANTALLA_COMPLETA: ['KeyF'],
   CONFIRMAR: ['Enter', 'Space'],
+  AYUDA: ['KeyH'],
 };
 
 export const TACTIL = {

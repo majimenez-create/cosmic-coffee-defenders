@@ -5,9 +5,9 @@ universo. Oleadas infinitas, tres vidas, un impacto y mueres.
 
 **Fácil de entender en treinta segundos. Difícil de dominar en cientos de partidas.**
 
-> 🎮 **Estado: jugable.** Los enemigos entran en curvas coreografiadas, forman
-> la escuadra que respira y salen en picado a atacar. Faltan la fase bonus, el
-> jefe, el sonido y los ajustes.
+> 🎮 **Estado: jugable, con sonido y portada.** Los enemigos entran en curvas
+> coreografiadas, forman la escuadra que respira y salen en picado a atacar.
+> Faltan la fase bonus, el jefe, los ajustes y el ranking mundial.
 
 ---
 
@@ -103,7 +103,7 @@ y abrir `http://localhost:8000`.
 - [x] **Fase 0** — Cimientos: estructura, configuración y despliegue
 - [x] **Fase 1** — Se puede jugar: mover, disparar, destruir, morir, puntuar
 - [x] **Fase 2** — Se siente como Galaga: curvas, formación que respira, picados
-- [ ] **Fase 3** — Identidad: la taza, los enemigos, el fondo, el sonido, los menús
+- [x] **Fase 3** — Identidad: la taza, los enemigos, el fondo, el sonido, los menús
 - [ ] **Fase 4** — Ciclo completo: fase bonus y la Gran Tostadora Cósmica
 - [ ] **Fase 5** — Pulido: ajustes, mando, accesibilidad y equilibrado
 - [ ] **Fase 6** — Ranking mundial

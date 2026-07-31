@@ -62,6 +62,33 @@ export function dibujarTexto(ctx, texto, x, y, opciones = {}) {
 }
 
 /**
+ * Como dibujarTexto, pero reduciendo el tamaño si el texto no cabe en el ancho
+ * indicado.
+ *
+ * Hace falta porque el ancho real de un texto depende de la fuente que tenga
+ * instalada quien juega, y esa fuente no es la misma en Windows, en un Mac o
+ * en un Android. Un título que cabe justo en un sitio aparece cortado por los
+ * lados en otro. Con esto siempre cabe, en cualquier dispositivo.
+ */
+export function dibujarTextoAjustado(ctx, texto, x, y, anchoMaximo, opciones = {}) {
+  const { tamano = 14, espaciado = 0 } = opciones;
+
+  let tamanoFinal = tamano;
+  let ancho = medir(ctx, texto, tamanoFinal, espaciado);
+
+  // Se baja de píxel en píxel hasta que quepa. Nunca por debajo de la mitad:
+  // si hiciera falta tanto, el problema es el texto, no el tamaño.
+  const minimo = Math.ceil(tamano * 0.5);
+  while (ancho > anchoMaximo && tamanoFinal > minimo) {
+    tamanoFinal -= 1;
+    ancho = medir(ctx, texto, tamanoFinal, espaciado);
+  }
+
+  dibujarTexto(ctx, texto, x, y, { ...opciones, tamano: tamanoFinal });
+  return tamanoFinal;
+}
+
+/**
  * Dibuja los números con paso fijo para que la puntuación no "baile" al
  * cambiar de cifra. Un marcador que se mueve solo distrae en mitad de la
  * acción, y es un detalle que separa un arcade cuidado de uno que no lo es.
