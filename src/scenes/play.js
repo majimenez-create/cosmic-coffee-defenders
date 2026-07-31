@@ -26,7 +26,7 @@ import { Caminos } from '../game/paths.js';
 import { TODOS as CAMINOS_TODOS, PICADOS } from '../game/pathLibrary.js';
 import { ESTADO_ENEMIGO } from '../game/enemy.js';
 
-import { CampoDeEstrellas } from '../render/starfield.js';
+import { Fondo } from '../render/background.js';
 import {
   dibujarTaza, dibujarGrano, dibujarAvispa, dibujarCafetera,
   dibujarDisparoJugador, dibujarDisparoEnemigo,
@@ -66,7 +66,7 @@ export class Partida {
     this.entrada = entrada;
     this.audio = audio;
 
-    this.estrellas = new CampoDeEstrellas();
+    this.fondo = new Fondo();
     this.particulas = new Particulas();
     this.disparosJugador = new Proyectiles(DISPARO.MAXIMO_EN_PANTALLA, false);
     this.disparosEnemigos = new Proyectiles(DISPARO_ENEMIGO.MAXIMO_EN_PANTALLA, true);
@@ -205,7 +205,7 @@ export class Partida {
     }
     if (this.avisoSilencio > 0) this.avisoSilencio -= dt;
 
-    this.estrellas.actualizar(dt);
+    this.fondo.actualizar(dt);
     this.particulas.actualizar(dt);
     this.sacudida = Math.max(0, this.sacudida - dt);
     for (const p of this.puntosFlotantes) {
@@ -481,7 +481,7 @@ export class Partida {
   // -------------------------------------------------------------------------
 
   dibujar(ctx) {
-    this.estrellas.dibujar(ctx, this.tiempo);
+    this.fondo.dibujar(ctx);
 
     ctx.save();
     if (this.sacudida > 0) {
