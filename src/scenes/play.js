@@ -15,6 +15,7 @@ import {
 } from '../config/balance.js';
 import {
   HUD, FONDO, JUGADOR as COL_JUGADOR, ENEMIGOS as COL_ENEMIGOS, TIPOGRAFIA,
+  DISPARO_JUGADOR as COL_DISPARO, PELIGRO as COL_PELIGRO,
 } from '../config/palette.js';
 
 import { Taza, ESTADO } from '../game/player.js';
@@ -27,6 +28,7 @@ import { TODOS as CAMINOS_TODOS, PICADOS } from '../game/pathLibrary.js';
 import { ESTADO_ENEMIGO } from '../game/enemy.js';
 
 import { Fondo } from '../render/background.js';
+import { Resplandor } from '../render/glow.js';
 import {
   dibujarTaza, dibujarGrano, dibujarAvispa, dibujarCafetera,
   dibujarDisparoJugador, dibujarDisparoEnemigo,
@@ -67,6 +69,13 @@ export class Partida {
     this.audio = audio;
 
     this.fondo = new Fondo();
+    this.resplandor = new Resplandor();
+    // Se preparan los halos al arrancar, no en mitad de la acción: así la
+    // primera explosión no provoca un microtirón justo cuando importa.
+    this.resplandor.precalentar([
+      COL_JUGADOR.CIAN, COL_DISPARO.HALO, COL_PELIGRO.PROYECTIL,
+      COL_ENEMIGOS.grano.cuerpo, COL_ENEMIGOS.avispa.cuerpo, COL_ENEMIGOS.cafetera.cuerpo,
+    ]);
     this.particulas = new Particulas();
     this.disparosJugador = new Proyectiles(DISPARO.MAXIMO_EN_PANTALLA, false);
     this.disparosEnemigos = new Proyectiles(DISPARO_ENEMIGO.MAXIMO_EN_PANTALLA, true);
@@ -515,6 +524,11 @@ export class Partida {
   _dibujarEnemigos(ctx) {
     for (const e of this.formacion.enemigos) {
       if (!e.vivo) continue;
+
+      // Halo tenue del color del enemigo. Muy suave: la escuadra tiene que
+      // leerse por su forma, no brillar tanto que se convierta en manchas.
+      this.resplandor.halo(ctx, e.x, e.y, e.radio * 1.6, COL_ENEMIGOS[e.tipo].cuerpo, 0.35);
+
       ctx.save();
       ctx.translate(e.x, e.y);
 
@@ -571,6 +585,11 @@ export class Partida {
   _dibujarJugador(ctx) {
     if (this.taza.estado === ESTADO.MURIENDO) return;
 
+    // La taza siempre brilla, en cualquier nivel de calidad: es el objeto que
+    // el jugador tiene que encontrar de un vistazo en todo momento.
+    const parpadeo = this.taza.invulnerable > 0 ? 0.5 : 1;
+    this.resplandor.halo(ctx, this.taza.x, this.taza.y, 22, COL_JUGADOR.CIAN, 0.45 * parpadeo);
+
     ctx.save();
     ctx.translate(this.taza.x, this.taza.y);
 
@@ -605,6 +624,7 @@ export class Partida {
   _dibujarProyectiles(ctx) {
     for (const p of this.disparosJugador.lista) {
       if (!p.activo) continue;
+      this.resplandor.halo(ctx, p.x, p.y, 13, COL_DISPARO.HALO, 0.9);
       ctx.save();
       ctx.translate(p.x, p.y);
       dibujarDisparoJugador(ctx);
@@ -615,6 +635,9 @@ export class Partida {
     // HUD va por encima. Ningún efecto puede tapar una amenaza.
     for (const p of this.disparosEnemigos.lista) {
       if (!p.activo) continue;
+      // El halo del proyectil enemigo nunca baja de este tamaño, en ningún
+      // nivel de calidad: es lo que puede matarte y tiene que verse siempre.
+      this.resplandor.halo(ctx, p.x, p.y, 11, COL_PELIGRO.PROYECTIL, p.opacidad);
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.globalAlpha = p.opacidad;
