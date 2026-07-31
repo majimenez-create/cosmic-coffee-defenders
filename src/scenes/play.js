@@ -11,7 +11,7 @@
 
 import {
   PANTALLA, DISPARO, DISPARO_ENEMIGO, ATAQUES, PUNTUACION, PROGRESION,
-  CICLO_FASES, JUGADOR as CFG_JUGADOR, EFECTOS, TIEMPOS, CARTELES, PROVISIONAL,
+  CICLO_FASES, JUGADOR as CFG_JUGADOR, EFECTOS, TIEMPOS, CARTELES,
 } from '../config/balance.js';
 import {
   HUD, FONDO, JUGADOR as COL_JUGADOR, ENEMIGOS as COL_ENEMIGOS, TIPOGRAFIA,
@@ -22,9 +22,15 @@ import { Proyectiles } from '../game/bullets.js';
 import { Formacion } from '../game/formation.js';
 import { Particulas } from '../game/particles.js';
 import { proyectilTocaCirculo, circulosTocan } from '../game/collision.js';
+import { Caminos } from '../game/paths.js';
+import { TODOS as CAMINOS_TODOS, PICADOS } from '../game/pathLibrary.js';
+import { ESTADO_ENEMIGO } from '../game/enemy.js';
 
 import { CampoDeEstrellas } from '../render/starfield.js';
-import { dibujarTaza, dibujarGrano, dibujarDisparoJugador, dibujarDisparoEnemigo } from '../render/shapes.js';
+import {
+  dibujarTaza, dibujarGrano, dibujarAvispa, dibujarCafetera,
+  dibujarDisparoJugador, dibujarDisparoEnemigo,
+} from '../render/shapes.js';
 import { dibujarHud } from '../render/hud.js';
 import { dibujarTexto } from '../render/text.js';
 import { leerRecord, guardarRecord } from '../services/scoreStore.js';
@@ -39,12 +45,17 @@ const FASE = {
 };
 
 /**
- * Qué tipos de enemigo sabe dibujar el juego hoy. Es una salvaguarda: crear
- * una avispa cuando solo existe el dibujo del grano haría que un enemigo de
- * 2 puntos de vida y hitbox distinta se viera exactamente igual que el
- * básico, y eso rompe la promesa de que cada muerte se sienta justa.
+ * Cómo se dibuja cada tipo. La salvaguarda está en que si algún día se añade
+ * un tipo al balance sin su dibujo, aquí no encontrará su función y se verá
+ * enseguida, en lugar de aparecer disfrazado de otro enemigo con vida y
+ * tamaño distintos.
  */
-const TIPOS_DIBUJABLES = ['grano'];
+const DIBUJOS = {
+  grano: (ctx, e) => dibujarGrano(ctx, e.balanceo),
+  avispa: (ctx, e) => dibujarAvispa(ctx, e.escalaAlas ?? 1),
+  cafetera: (ctx, e, tiempo) => dibujarCafetera(ctx, tiempo, e.vida < e.def.vida),
+};
+const TIPOS_DIBUJABLES = Object.keys(DIBUJOS);
 
 export class Partida {
   constructor(entrada) {
@@ -54,10 +65,19 @@ export class Partida {
     this.particulas = new Particulas();
     this.disparosJugador = new Proyectiles(DISPARO.MAXIMO_EN_PANTALLA, false);
     this.disparosEnemigos = new Proyectiles(DISPARO_ENEMIGO.MAXIMO_EN_PANTALLA, true);
-    this.formacion = new Formacion();
+
+    // Las trayectorias se miden una sola vez al arrancar. A partir de aquí,
+    // recorrerlas es gratis.
+    this.caminos = new Caminos(CAMINOS_TODOS, new Set(Object.keys(PICADOS)));
+    this.formacion = new Formacion(this.caminos);
     this.taza = new Taza(this.disparosJugador);
 
     this.record = leerRecord();
+    // Reservados de antemano, como las partículas: nada de crear objetos a
+    // mitad de partida.
+    this.puntosFlotantes = Array.from({ length: 6 }, () => ({
+      x: 0, y: 0, cantidad: 0, vida: 0,
+    }));
     this.sacudida = 0;
     this.sacudidaDuracion = 1;
     this.sacudidaAmplitud = 0;
@@ -90,19 +110,37 @@ export class Partida {
     const plantilla = CICLO_FASES[(this.numeroFase - 1) % CICLO_FASES.length];
     const pedidos = plantilla.enemigos ?? ['grano'];
     const tipos = pedidos.filter((t) => TIPOS_DIBUJABLES.includes(t));
-    this.formacion.poblar(tipos.length ? tipos : ['grano']);
+
+    // Cada vuelta al ciclo de 5 fases sube la dificultad un poco, con un
+    // tope: la fase 40 debe ser dura, no imposible.
+    const ciclo = Math.floor((this.numeroFase - 1) / CICLO_FASES.length);
+    this.multiplicadorVelocidad = Math.min(
+      PROGRESION.MULTIPLICADOR_VELOCIDAD_MAXIMO,
+      PROGRESION.VELOCIDAD_ENEMIGOS_POR_CICLO ** ciclo
+    );
+    this.multiplicadorFrecuencia = Math.min(
+      PROGRESION.MULTIPLICADOR_FRECUENCIA_MAXIMO,
+      PROGRESION.FRECUENCIA_ATAQUES_POR_CICLO ** ciclo
+    );
+
+    this.formacion.poblar(tipos.length ? tipos : ['grano'], this.multiplicadorVelocidad);
+
+    // Las primeras fases avisan más tiempo antes de cada ataque, y con eso
+    // basta para que cualquiera aprenda a leer los picados.
+    this.formacion.telegrafiado = this._esFaseFacil()
+      ? ATAQUES.TELEGRAFIADO_PRIMERAS_FASES
+      : ATAQUES.TELEGRAFIADO;
 
     this.fase = FASE.INTRO;
     this.temporizador = TIEMPOS.INTRO_FASE;
+    this.recargaAtaque = this._esFaseFacil()
+      ? ATAQUES.ESPERA_PRIMER_ATAQUE_FACIL
+      : ATAQUES.ESPERA_PRIMER_ATAQUE;
 
     // La puntería se mide por oleada, no por partida: así el dato del cartel
     // habla de lo que el jugador acaba de hacer.
     this.disparosAlEmpezarOleada = this.taza.disparosRealizados;
     this.acertados = 0;
-
-    this.recargaEnemigos = this._esFaseFacil()
-      ? ATAQUES.ESPERA_PRIMER_ATAQUE_FACIL
-      : ATAQUES.ESPERA_PRIMER_ATAQUE;
   }
 
   _esFaseFacil() {
@@ -154,6 +192,9 @@ export class Partida {
     this.estrellas.actualizar(dt);
     this.particulas.actualizar(dt);
     this.sacudida = Math.max(0, this.sacudida - dt);
+    for (const p of this.puntosFlotantes) {
+      if (p.vida > 0) p.vida -= dt;
+    }
 
     // El marcador cuenta hacia el valor real en lugar de saltar de golpe.
     if (this.puntosMostrados < this.puntos) {
@@ -219,7 +260,8 @@ export class Partida {
     this.disparosJugador.actualizar(dt);
     this.disparosEnemigos.actualizar(dt);
 
-    if (this.fase === FASE.COMBATE) this._dispararEnemigos(dt);
+    if (this.fase === FASE.COMBATE) this._ordenarAtaques(dt);
+    this._dispararDesdePicados();
     this._resolverColisiones();
 
     if (this.fase === FASE.COMBATE && !this.formacion.quedanVivos) {
@@ -230,26 +272,34 @@ export class Partida {
     this.entrada.finPaso();
   }
 
-  _dispararEnemigos(dt) {
-    this.recargaEnemigos -= dt;
-    if (this.recargaEnemigos > 0) return;
+  /**
+   * Manda salir a atacar. Es lo que convierte una rejilla de dianas en un
+   * juego: la escuadra quieta no mata a nadie.
+   */
+  _ordenarAtaques(dt) {
     if (this.taza.estado !== ESTADO.VIVO) return;
 
-    const tirador = this.formacion.elegirTirador(PROVISIONAL.TODOS_DISPARAN);
-    if (tirador) {
-      this.disparosEnemigos.lanzar(
-        tirador.x,
-        tirador.y + DISPARO_ENEMIGO.DESPLAZAMIENTO_ORIGEN,
-        DISPARO_ENEMIGO.VELOCIDAD
-      );
-      tirador.recarga = DISPARO_ENEMIGO.RECARGA_TIRADOR;
-    }
+    this.recargaAtaque -= dt;
+    if (this.recargaAtaque > 0) return;
 
-    // Las primeras fases perdonan más: es lo que engancha a quien abre el
-    // enlace por primera vez.
-    this.recargaEnemigos = this._esFaseFacil()
-      ? ATAQUES.INTERVALO_BASE / PROGRESION.MULTIPLICADOR_FASES_FACILES
-      : ATAQUES.INTERVALO_BASE;
+    const salidos = this.formacion.lanzarAtaque(ATAQUES.ATACANTES_POR_TANDA, this.taza.x);
+
+    let espera = ATAQUES.INTERVALO_BASE / this.multiplicadorFrecuencia;
+    if (this._esFaseFacil()) espera /= PROGRESION.MULTIPLICADOR_FASES_FACILES;
+    // Si no ha podido salir nadie (por el tope de atacantes o porque todos
+    // están sobre el jugador), se reintenta pronto en lugar de perder la tanda.
+    this.recargaAtaque = salidos ? espera : ATAQUES.ESCALON_ENTRE_AVISOS * 4;
+  }
+
+  /** Los enemigos en picado sueltan su disparo a mitad del recorrido. */
+  _dispararDesdePicados() {
+    for (const e of this.formacion.tiradoresEnPicado()) {
+      this.disparosEnemigos.lanzar(
+        e.x,
+        e.y + DISPARO_ENEMIGO.DESPLAZAMIENTO_ORIGEN,
+        DISPARO_ENEMIGO.VELOCIDAD * this.multiplicadorVelocidad
+      );
+    }
   }
 
   _resolverColisiones() {
@@ -264,7 +314,12 @@ export class Partida {
         this.acertados++;
 
         if (e.recibirImpacto()) {
-          this._sumarPuntos(e.def.puntos);
+          // [BIBLIA] destruir un enemigo mientras ataca concede el doble.
+          // Es lo que premia arriesgarse en vez de limpiar la formación quieta.
+          const enPicado = e.estaAtacando;
+          const puntos = e.def.puntos * (enPicado ? PUNTUACION.MULTIPLICADOR_EN_PICADO : 1);
+          this._sumarPuntos(puntos);
+          if (enPicado) this._mostrarPuntos(e.x, e.y, puntos);
           this.particulas.explosionEnemigo(
             e.x, e.y, e.def.particulasExplosion, COL_ENEMIGOS[e.tipo].cuerpo
           );
@@ -322,6 +377,20 @@ export class Partida {
     }
   }
 
+  /**
+   * Los puntos flotantes solo aparecen cuando aportan información: al abatir
+   * un enemigo en picado, que vale el doble. Ponerlos en cada muerte sería
+   * ruido en el 80 % de los casos.
+   */
+  _mostrarPuntos(x, y, cantidad) {
+    const libre = this.puntosFlotantes.find((p) => p.vida <= 0);
+    if (!libre) return;
+    libre.x = x;
+    libre.y = y;
+    libre.cantidad = cantidad;
+    libre.vida = TIEMPOS.PUNTOS_FLOTANTES;
+  }
+
   _sumarPuntos(cantidad) {
     this.puntos += cantidad;
     // El récord se guarda en cuanto se supera, no al morir: así una recarga
@@ -373,6 +442,7 @@ export class Partida {
     this._dibujarEnemigos(ctx);
     this._dibujarJugador(ctx);
     this.particulas.dibujar(ctx);
+    this._dibujarPuntosFlotantes(ctx);
     this._dibujarProyectiles(ctx);
 
     ctx.restore();
@@ -393,7 +463,28 @@ export class Partida {
       if (!e.vivo) continue;
       ctx.save();
       ctx.translate(e.x, e.y);
-      dibujarGrano(ctx, e.balanceo);
+
+      // Al trazar una curva, el enemigo gira siguiendo la trayectoria. Sin
+      // esto se desliza de lado como una pegatina y las curvas pierden toda
+      // su gracia.
+      if (e.angulo) ctx.rotate(e.angulo);
+
+      DIBUJOS[e.tipo](ctx, e, this.tiempo);
+
+      // Telegrafiado: dos destellos blancos mientras avisa. Junto con el
+      // pequeño descenso, son los dos canales que anuncian el ataque.
+      if (e.estado === ESTADO_ENEMIGO.AVISANDO) {
+        const avance = 1 - e.aviso / e.avisoTotal;
+        const parpadeo = Math.sin(avance * Math.PI * 6) > 0.2;
+        if (parpadeo) {
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = 0.55;
+          ctx.fillStyle = COL_JUGADOR.PORCELANA_ESPECULAR;
+          ctx.beginPath();
+          ctx.arc(0, 0, e.radio, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
 
       // Destello blanco al recibir un impacto que no mata: enseña dónde has
       // acertado sin necesidad de números.
@@ -406,6 +497,20 @@ export class Partida {
         ctx.fill();
       }
       ctx.restore();
+    }
+  }
+
+  _dibujarPuntosFlotantes(ctx, dt) {
+    for (const p of this.puntosFlotantes) {
+      if (p.vida <= 0) continue;
+      const avance = 1 - p.vida / TIEMPOS.PUNTOS_FLOTANTES;
+      dibujarTexto(ctx, '+' + p.cantidad, p.x, p.y - avance * 18, {
+        tamano: TIPOGRAFIA.TAMANOS.PUNTOS_FLOTANTES,
+        color: HUD.VALOR_DESTACADO,
+        espaciado: TIPOGRAFIA.ESPACIADOS.VALOR,
+        alineacion: 'centro',
+        alpha: 1 - avance,
+      });
     }
   }
 

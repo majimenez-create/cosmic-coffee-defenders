@@ -136,9 +136,10 @@ export const ENEMIGOS = {
     cuerpoClaro: '#D9B0FF',
     sombra: '#4A1C86',
     brillo: '#E7CCFF',
-    acento: '#FFC24B',         // la corona: su marca de rango
+    acento: '#FFC24B',         // la corona: tapa y válvulas de presión
     placas: '#7A3ECC',
-    ojo: '#1A0A2E',
+    ojo: '#1A0A2E',            // la aguja del manómetro
+    esferaManometro: '#F4EFE6',
   },
 };
 

@@ -191,6 +191,7 @@ export const FORMACION = {
   TOTAL: 24,                   // [BIBLIA] 24 enemigos por fase
   ENEMIGOS_POR_GRUPO: 4,       // [BIBLIA] entran en grupos de 4
   ESPERA_ENTRE_GRUPOS: 0.5,
+  ESPERA_DENTRO_DEL_GRUPO: 0.18, // van en fila india, no amontonados
 
   SEPARACION_X: 38,
   SEPARACION_Y: 34,
@@ -206,6 +207,10 @@ export const FORMACION = {
   // Cuando quedan muy pocos, dejan de volver a formación y siguen atacando.
   UMBRAL_ENFURECIDOS: 2,
   MULTIPLICADOR_VELOCIDAD_ENFURECIDOS: 1.2, // herencia de Galaga: se aceleran
+
+  // El último tramo de la vuelta a casa. No es una curva fija: persigue la
+  // casilla, que se está moviendo, para que el aterrizaje sea exacto.
+  DURACION_ACOPLE: 0.45,
 };
 
 // ---------------------------------------------------------------------------
@@ -222,9 +227,17 @@ export const ATAQUES = {
   INTERVALO_BASE: 2.4,         // tiempo medio entre tandas de ataque
   RECARGA_INICIAL_MAXIMA: 3.0, // desincroniza a los enemigos al empezar
 
+  DESCENSO_AVISO: 4,           // se descuelga 4 px mientras avisa: el segundo
+                               // canal del telegrafiado, además del destello
+  AVANCE_MINIMO_PARA_DISPARAR: 0.25, // no dispara al salir, sino ya en camino
+  ATACANTES_POR_TANDA: 2,      // cuántos salen juntos como máximo
+  ESCALON_ENTRE_AVISOS: 0.12,  // dos avisos nunca arrancan en el mismo paso,
+                               // o no se leerían por separado
+
   // Reglas de juego limpio de la biblia: nunca aparecer encima del jugador
   // ni lanzar ataques imposibles de esquivar.
   DISTANCIA_MINIMA_AL_JUGADOR: 180,
+  MARGEN_SOBRE_JUGADOR: 40,    // nadie sale a atacar desde justo encima de ti
 };
 
 // ---------------------------------------------------------------------------
@@ -379,23 +392,6 @@ export const PUNTUACION = {
 };
 
 // ---------------------------------------------------------------------------
-// PROVISIONAL — se elimina en la fase 2
-// ---------------------------------------------------------------------------
-
-/**
- * La biblia dice que el grano explorador NO dispara: la amenaza real vienen
- * de los enemigos que se lanzan en picado. Pero los picados llegan en la
- * fase 2, y hasta entonces un juego donde nada puede matarte no se puede
- * probar de verdad.
- *
- * Así que, provisionalmente, cualquier enemigo puede disparar desde la
- * formación. En cuanto existan los picados, esto se pone a false y se borra.
- */
-export const PROVISIONAL = {
-  TODOS_DISPARAN: true,
-};
-
-// ---------------------------------------------------------------------------
 // RITMO DE LAS PANTALLAS
 // ---------------------------------------------------------------------------
 
@@ -410,6 +406,7 @@ export const TIEMPOS = {
                                // su propia puntuación sin llegar a verla
   CUENTA_ATRAS_PAUSA: 0.6,     // por cada número del 3 · 2 · 1
   DESTELLO_IMPACTO: 0.08,      // el parpadeo blanco del enemigo golpeado
+  PUNTOS_FLOTANTES: 0.6,       // lo que dura el "+200" al abatir en picado
 };
 
 /** Posición vertical de cada cartel, para que no bailen entre pantallas. */

@@ -255,6 +255,209 @@ export function dibujarGrano(ctx, balanceo = 0, escala = 1) {
 }
 
 // ---------------------------------------------------------------------------
+// AVISPA DE VAPOR
+// ---------------------------------------------------------------------------
+
+/**
+ * 32 x 24 px. Punta de flecha con alas barridas. Es la más ANCHA y achatada
+ * de las tres, y su movimiento es DEFORMACIÓN: las alas aletean a 6 Hz.
+ * Ese aleteo rápido es lo que la distingue del grano (que rota despacio) y de
+ * la cafetera (que late muy despacio), incluso viéndolas en negro.
+ *
+ * @param {number} escalaAlas  1,00 alas extendidas · 0,75 recogidas
+ */
+export function dibujarAvispa(ctx, escalaAlas = 1) {
+  const c = ENEMIGOS.avispa;
+
+  // Alas. Se dibujan primero para que el cuerpo las tape por el centro.
+  ctx.save();
+  ctx.scale(1, escalaAlas);
+  for (const lado of [-1, 1]) {
+    ctx.fillStyle = c.cuerpo;
+    ctx.beginPath();
+    ctx.moveTo(lado * 6, -2);
+    ctx.lineTo(lado * 14, -8);
+    ctx.lineTo(lado * 8, 3);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = c.brillo;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(lado * 6, -2);
+    ctx.lineTo(lado * 14, -8);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Cuerpo en punta hacia abajo.
+  ctx.fillStyle = c.cuerpo;
+  ctx.beginPath();
+  ctx.moveTo(0, 12);
+  ctx.lineTo(7, 2);
+  ctx.lineTo(5, -6);
+  ctx.lineTo(0, -10);
+  ctx.lineTo(-5, -6);
+  ctx.lineTo(-7, 2);
+  ctx.closePath();
+  ctx.fill();
+
+  // Tres bandas oscuras: es lo que grita "avispa" sin necesidad de más.
+  ctx.save();
+  ctx.clip();
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = c.acento;
+  for (const y of [-3, 1, 5]) ctx.fillRect(-8, y, 16, 2);
+  ctx.restore();
+
+  // Visor. Parpadea en magenta al telegrafiar el ataque, pero eso lo hace
+  // quien dibuja, no esta función.
+  ctx.fillStyle = c.visor;
+  ctx.beginPath();
+  ctx.moveTo(-4, -5);
+  ctx.lineTo(4, -5);
+  ctx.lineTo(3, -9);
+  ctx.lineTo(-3, -9);
+  ctx.closePath();
+  ctx.fill();
+
+  // Aguijón.
+  ctx.fillStyle = c.brillo;
+  ctx.beginPath();
+  ctx.moveTo(-2, 12);
+  ctx.lineTo(2, 12);
+  ctx.lineTo(0, 18);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// ---------------------------------------------------------------------------
+// CAFETERA GUARDIANA
+// ---------------------------------------------------------------------------
+
+/**
+ * 34 x 36 px. Hexágono coronado. Es la ÚNICA unidad más alta que ancha de
+ * toda la pantalla, y eso la hace inconfundible en silueta, en visión
+ * periférica y a cualquier distancia. Su movimiento es TRASLACIÓN: un latido
+ * vertical lento y pesado.
+ *
+ * Aguanta dos impactos, y es la única con un indicador de estado en el cuerpo:
+ * su manómetro. Con un impacto recibido, la esfera se queda fija en ámbar y la
+ * aguja tiembla. Así se comunican sus dos puntos de vida sin barras ni iconos.
+ *
+ * @param {number} tiempo
+ * @param {boolean} dañada  si ya ha recibido un impacto
+ */
+export function dibujarCafetera(ctx, tiempo = 0, dañada = false) {
+  const c = ENEMIGOS.cafetera;
+
+  // Anillo orbital, mitad de atrás.
+  const giro = tiempo * 0.21; // 12°/s
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  ctx.strokeStyle = c.brillo;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 19, 6, 0, Math.PI + giro, Math.PI * 2 + giro);
+  ctx.stroke();
+  ctx.restore();
+
+  // Corona: tapa y válvulas de presión. El único ámbar sobre un cuerpo
+  // enemigo en todo el juego, y funciona como etiqueta de valor: 400 puntos.
+  ctx.fillStyle = c.acento;
+  for (const x of [-8, 8]) {
+    ctx.fillRect(x - 1.5, -20, 3, 8);
+    ctx.beginPath();
+    ctx.arc(x, -20, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.beginPath();
+  ctx.moveTo(-3, -12);
+  ctx.lineTo(3, -12);
+  ctx.lineTo(2.5, -20);
+  ctx.lineTo(-2.5, -20);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(0, -20, 2.5, Math.PI, Math.PI * 2);
+  ctx.fill();
+
+  // Placas laterales de cafetera italiana.
+  ctx.fillStyle = c.placas;
+  for (const x of [-17, 13]) {
+    rectanguloRedondeado(ctx, x, -7, 4, 14, 1);
+    ctx.fill();
+  }
+  ctx.fillStyle = c.brillo;
+  for (const x of [-15, 15]) {
+    for (const y of [-4, 6]) {
+      ctx.beginPath();
+      ctx.arc(x, y, 0.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Cuerpo hexagonal.
+  ctx.fillStyle = conCache('cuerpoCafetera', () => {
+    const g = ctx.createLinearGradient(0, -13, 0, 13);
+    g.addColorStop(0.0, c.cuerpoClaro);
+    g.addColorStop(0.5, c.cuerpo);
+    g.addColorStop(1.0, c.sombra);
+    return g;
+  });
+  // Hexágono sin achatar: la cafetera tiene que leerse MÁS ALTA QUE ANCHA,
+  // porque es la única unidad de la pantalla con proporción vertical y ese es
+  // su discriminador de silueta.
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 3;
+    const x = Math.cos(a) * 14;
+    const y = Math.sin(a) * 14;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  // Manómetro: su indicador de daño.
+  ctx.fillStyle = c.esferaManometro;
+  ctx.beginPath();
+  ctx.arc(0, 0, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = c.acento;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  if (dañada) {
+    ctx.fillStyle = c.acento;
+    ctx.beginPath();
+    ctx.arc(0, 0, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // La aguja oscila despacio; si está dañada, tiembla a 12 Hz.
+  const angulo = dañada
+    ? Math.PI * 0.55 + Math.sin(tiempo * 75) * 0.12
+    : -Math.PI / 3 + Math.sin(tiempo * 2.2) * 0.44;
+  ctx.strokeStyle = c.ojo;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(Math.cos(angulo) * 4, Math.sin(angulo) * 4);
+  ctx.stroke();
+
+  // Anillo orbital, mitad de delante.
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  ctx.strokeStyle = c.brillo;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 19, 6, 0, giro, Math.PI + giro);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
 // PROYECTILES
 // ---------------------------------------------------------------------------
 
