@@ -20,6 +20,18 @@ import { JEFE as CFG, PANTALLA, ZONA_JUGADOR } from '../config/balance.js';
 import { ESTADO_JEFE } from '../game/boss.js';
 
 /**
+ * Los degradados de la carcasa no dependen ni del daño ni del reloj, así que se
+ * crean una sola vez. Antes se fabricaban seis por fotograma durante todo el
+ * combate, que es exactamente lo que este proyecto evita en todas partes.
+ */
+const cache = {};
+
+function conCache(clave, crear) {
+  if (!cache[clave]) cache[clave] = crear();
+  return cache[clave];
+}
+
+/**
  * @param {import('../game/boss.js').Jefe} jefe
  * @param {number} tiempo
  * @param {number} [encendido]  0 apagado (durante la entrada) · 1 encendido
@@ -234,8 +246,8 @@ function _aura(ctx, tiempo, dano) {
   const base = 0.10 + dano * 0.03;
   const latido = 1 + 0.08 * Math.sin(tiempo * 1.57);
   const g = ctx.createRadialGradient(0, 10, 20, 0, 10, 105);
-  g.addColorStop(0, `rgba(255,138,61,${base * latido})`);
-  g.addColorStop(1, 'rgba(255,138,61,0)');
+  g.addColorStop(0, `rgba(${COL.AURA_CALOR_RGB},${base * latido})`);
+  g.addColorStop(1, `rgba(${COL.AURA_CALOR_RGB},0)`);
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   ctx.fillStyle = g;
@@ -266,10 +278,12 @@ function _chimeneas(ctx, tiempo, dano) {
       continue;
     }
 
-    const g = ctx.createLinearGradient(0, -56, 0, -24);
-    g.addColorStop(0, COL.CHIMENEA);
-    g.addColorStop(1, COL.CHIMENEA_SOMBRA);
-    ctx.fillStyle = g;
+    ctx.fillStyle = conCache('chimenea', () => {
+      const g = ctx.createLinearGradient(0, -56, 0, -24);
+      g.addColorStop(0, COL.CHIMENEA);
+      g.addColorStop(1, COL.CHIMENEA_SOMBRA);
+      return g;
+    });
     _caminoChimenea(ctx, x);
     ctx.fill();
 
@@ -284,7 +298,7 @@ function _chimeneas(ctx, tiempo, dano) {
 
     // La derecha empieza a echar humo negro al saltarle la placa.
     const negro = dano >= 2 && x > 0;
-    _humo(ctx, x, -58, tiempo, negro ? COL.HUMO_NEGRO : '#DCE9F5', negro ? 0.3 : 0.22);
+    _humo(ctx, x, -58, tiempo, negro ? COL.HUMO_NEGRO : COL.VAPOR, negro ? 0.3 : 0.22);
   }
 }
 
@@ -324,10 +338,12 @@ function _tolva(ctx, tiempo, dano) {
   // Con cuatro umbrales se ha desprendido: queda inclinada y vacía.
   const inclinacion = dano >= 4 ? 0.21 : 0;
 
-  const g = ctx.createLinearGradient(0, -58, 0, -24);
-  g.addColorStop(0, COL.METAL_CLARO);
-  g.addColorStop(1, COL.METAL_MEDIO);
-  ctx.fillStyle = g;
+  ctx.fillStyle = conCache('tolva', () => {
+    const g = ctx.createLinearGradient(0, -58, 0, -24);
+    g.addColorStop(0, COL.METAL_CLARO);
+    g.addColorStop(1, COL.METAL_MEDIO);
+    return g;
+  });
   _caminoTolva(ctx, inclinacion);
   ctx.fill();
 
@@ -364,13 +380,15 @@ function _caminoTambor(ctx) {
 
 /** El tambor tostador: la masa dominante. */
 function _tambor(ctx, dano) {
-  const g = ctx.createLinearGradient(0, -22, 0, 46);
-  g.addColorStop(0.00, COL.METAL_OSCURO);
-  g.addColorStop(0.22, COL.METAL_BRILLO);
-  g.addColorStop(0.45, COL.METAL_CLARO);
-  g.addColorStop(0.75, COL.METAL_MEDIO);
-  g.addColorStop(1.00, COL.METAL_OSCURO);
-  ctx.fillStyle = g;
+  ctx.fillStyle = conCache('tambor', () => {
+    const g = ctx.createLinearGradient(0, -22, 0, 46);
+    g.addColorStop(0.00, COL.METAL_OSCURO);
+    g.addColorStop(0.22, COL.METAL_BRILLO);
+    g.addColorStop(0.45, COL.METAL_CLARO);
+    g.addColorStop(0.75, COL.METAL_MEDIO);
+    g.addColorStop(1.00, COL.METAL_OSCURO);
+    return g;
+  });
   _caminoTambor(ctx);
   ctx.fill();
 
@@ -409,7 +427,7 @@ function _hueco(ctx, x, y) {
   ctx.save();
   ctx.translate(x, y);
 
-  ctx.fillStyle = '#1A2230';
+  ctx.fillStyle = COL.HUECO_INTERIOR;
   ctx.beginPath();
   ctx.moveTo(-11, -8);
   ctx.lineTo(-4, -6);
@@ -443,10 +461,12 @@ function _mirilla(ctx, tiempo, dano) {
   const cy = 12;
 
   // Cristal.
-  const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, 26);
-  g.addColorStop(0, COL.CRISTAL_MIRILLA);
-  g.addColorStop(1, COL.CRISTAL_BORDE);
-  ctx.fillStyle = g;
+  ctx.fillStyle = conCache('cristalMirilla', () => {
+    const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, 26);
+    g.addColorStop(0, COL.CRISTAL_MIRILLA);
+    g.addColorStop(1, COL.CRISTAL_BORDE);
+    return g;
+  });
   ctx.beginPath();
   ctx.arc(cx, cy, 26, 0, Math.PI * 2);
   ctx.fill();
@@ -460,7 +480,7 @@ function _mirilla(ctx, tiempo, dano) {
   const radioFuego = 14 + dano * 4;
   const f = ctx.createRadialGradient(cx, cy, 0, cx, cy, radioFuego);
   f.addColorStop(0, COL.FUEGO_INTERIOR);
-  f.addColorStop(1, 'rgba(255,138,61,0)');
+  f.addColorStop(1, `rgba(${COL.AURA_CALOR_RGB},0)`);
   ctx.globalAlpha = 0.55;
   ctx.fillStyle = f;
   ctx.fillRect(cx - 26, cy - 26, 52, 52);
@@ -484,7 +504,7 @@ function _mirilla(ctx, tiempo, dano) {
   // Grietas: tres al primer umbral, seis y teñidas de calor al tercero.
   if (dano >= 1) {
     const cuantas = dano >= 3 ? 6 : 3;
-    ctx.strokeStyle = dano >= 3 ? COL.FISURA : '#F4F7FB';
+    ctx.strokeStyle = dano >= 3 ? COL.FISURA : COL.CRISTAL_GRIETA;
     ctx.globalAlpha = 0.7;
     ctx.lineWidth = 1.5;
     for (let i = 0; i < cuantas; i++) {
@@ -535,7 +555,7 @@ function _canones(ctx) {
     ctx.fill();
 
     // Boca.
-    ctx.fillStyle = '#1A2230';
+    ctx.fillStyle = COL.HUECO_INTERIOR;
     ctx.beginPath();
     ctx.ellipse(lado * 72, 52, 6, 2.5, 0, 0, Math.PI * 2);
     ctx.fill();

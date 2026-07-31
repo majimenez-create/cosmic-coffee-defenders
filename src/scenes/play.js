@@ -5,8 +5,17 @@
  * Orquesta al jugador, la formación, los proyectiles, las colisiones y la
  * puntuación. Es el único sitio que conoce las reglas del enfrentamiento.
  *
- * FASE 1: la escuadra está colocada y dispara, pero todavía no hace las
- * entradas en curva ni los picados de ataque. Eso llega en la fase 2.
+ * LAS FASES DE UNA PARTIDA
+ *   INTRO           el cartel "FASE 3", con la escuadra ya entrando
+ *   COMBATE         el juego
+ *   OLEADA_LIMPIADA el panel con la puntería
+ *   BONUS_*         la fase de bonificación: aviso, coreografía y recuento
+ *   JEFE            la Gran Tostadora Cósmica
+ *   PAUSA           y REANUDANDO, con su cuenta atrás
+ *   FIN_PARTIDA
+ *
+ * Silenciar, pausar y la música se atienden ANTES de repartir por fases, para
+ * que funcionen en todas ellas sin excepción.
  */
 
 import {
@@ -115,7 +124,19 @@ export class Partida {
     this.empezar();
   }
 
+  /** Al salir de la partida no puede quedar ningún sonido programado. */
+  salir() {
+    this._cancelarSonidosAplazados();
+    this.audio.pararMusica();
+  }
+
+  _cancelarSonidosAplazados() {
+    for (const id of this._sonidosAplazados ?? []) clearTimeout(id);
+    this._sonidosAplazados = [];
+  }
+
   empezar() {
+    this._cancelarSonidosAplazados();
     this.taza.reiniciar();
     this.disparosJugador.limpiar();
     this.disparosEnemigos.limpiar();
@@ -174,8 +195,10 @@ export class Partida {
       this.jefe.reiniciar();
       this.formacion.enemigos = [];
       this.fase = FASE.JEFE;
+      this.eraFaseDeJefe = true;
       return;
     }
+    this.eraFaseDeJefe = false;
 
     this.formacion.poblar(tipos.length ? tipos : ['grano'], this.multiplicadorVelocidad);
 
@@ -201,6 +224,55 @@ export class Partida {
     return this.numeroFase <= PROGRESION.FASES_FACILES;
   }
 
+  /**
+   * Mueve la taza y suena lo que tenga que sonar.
+   *
+   * Está en un método propio porque hay TRES sitios que mueven la taza —el
+   * combate normal, la fase bonus y el jefe— y antes cada uno tenía su copia.
+   * El resultado era que en la fase bonus y contra el jefe se disparaba en
+   * silencio, y volvías a ser mortal sin el aviso sonoro.
+   */
+  _actualizarTaza(dt) {
+    const disparosAntes = this.taza.disparosRealizados;
+    const invulnerableAntes = this.taza.invulnerable;
+
+    this.taza.actualizar(dt, this.entrada, this.tiempo);
+
+    if (this.taza.disparosRealizados > disparosAntes) this.audio.disparo();
+    // Nunca se vuelve a ser mortal en silencio.
+    if (invulnerableAntes > 0 && this.taza.invulnerable <= 0) {
+      this.audio.finInvulnerabilidad();
+    }
+  }
+
+  /** No se puede pausar en medio de una transición ni con la partida acabada. */
+  _sePuedePausar() {
+    return this.fase !== FASE.PAUSA &&
+           this.fase !== FASE.REANUDANDO &&
+           this.fase !== FASE.FIN_PARTIDA;
+  }
+
+  /**
+   * Cuánto aprieta la música, de 0 a 1: sube conforme queda menos escuadra.
+   *
+   * Solo se recalcula mientras hay combate. En los carteles de "oleada
+   * despejada" y en la fase bonus la formación está vacía por construcción, y
+   * calcularla ahí daba tensión máxima justo en el momento de respirar.
+   */
+  _tensionMusical() {
+    if (this.fase === FASE.INTRO || this.fase === FASE.COMBATE) {
+      const vivos = this.formacion.cuantosVivos;
+      this._tension = Math.max(0, Math.min(1, 1 - vivos / FORMACION.TOTAL));
+    } else if (this.fase === FASE.JEFE) {
+      // Con el jefe la tensión la marca su vida: la música aprieta conforme
+      // se va desmontando.
+      this._tension = 1 - this.jefe.proporcionVida;
+    } else if (this.fase === FASE.BONUS || this.fase === FASE.BONUS_AVISO) {
+      this._tension = 0;   // la fase bonus es el respiro: música tranquila
+    }
+    return this._tension ?? 0;
+  }
+
   // -------------------------------------------------------------------------
   // Pausa
   // -------------------------------------------------------------------------
@@ -212,6 +284,10 @@ export class Partida {
 
   pausar() {
     if (this.fase === FASE.PAUSA || this.fase === FASE.FIN_PARTIDA) return;
+    // Y tampoco durante la cuenta atrás: si se pausara ahí, al reanudar se
+    // volvería a la propia cuenta atrás, que no lee ninguna entrada, y el
+    // juego quedaría congelado sin ninguna forma de salir salvo recargar.
+    if (this.fase === FASE.REANUDANDO) return;
     this.faseAntesDePausar = this.fase;
     this.temporizadorAntesDePausar = this.temporizador;
     this.fase = FASE.PAUSA;
@@ -245,12 +321,27 @@ export class Partida {
     this.tiempo += dt;
     this.entrada.actualizar();
 
-    // Silenciar está disponible en cualquier momento, incluso en pausa.
+    // Silenciar y pausar están disponibles en CUALQUIER momento, también
+    // durante la fase bonus y el jefe. Antes la comprobación de la pausa
+    // estaba después del reparto por fases, y esas dos salían antes de
+    // llegar: no se podía pausar precisamente en las fases más largas.
     if (this.entrada.silenciarPulsado) {
       this.silenciado = this.audio.alternarSilencio();
       this.avisoSilencio = TIEMPOS.AVISO_SILENCIO;
     }
     if (this.avisoSilencio > 0) this.avisoSilencio -= dt;
+
+    if (this.entrada.pausaPulsada && this._sePuedePausar()) {
+      this.pausar();
+      this.entrada.finPaso();
+      return;
+    }
+
+    // La música también se lleva el secuenciador FUERA del reparto por fases.
+    // Si no, se quedaba muda toda la fase bonus y todo el combate del jefe, y
+    // al volver intentaba recuperar el compás perdido soltando las notas
+    // atrasadas de golpe.
+    this.audio.actualizarMusica(dt, this._tensionMusical());
 
     this.fondo.actualizar(dt);
     this.particulas.actualizar(dt);
@@ -269,7 +360,12 @@ export class Partida {
 
     switch (this.fase) {
       case FASE.PAUSA:
-        if (this.entrada.confirmarPulsado || this.entrada.pausaPulsada) this.reanudar();
+        // También con el dedo: en un móvil, cambiar de aplicación pausa el
+        // juego, y sin esto no habría manera de volver a jugar.
+        if (this.entrada.confirmarPulsado || this.entrada.pausaPulsada ||
+            this.entrada.toquePulsado) {
+          this.reanudar();
+        }
         this.entrada.finPaso();
         return;
 
@@ -306,7 +402,11 @@ export class Partida {
         // no se salte su propia puntuación sin verla. Pasado ese margen, la
         // pulsación se atiende aunque se hubiera hecho antes: nunca se come
         // una pulsación.
-        if (this.entrada.confirmarPulsado) this.confirmacionPendiente = true;
+        // El toque cuenta igual: en un móvil, sin esto, al perder la última
+        // vida no habría forma de volver a jugar.
+        if (this.entrada.confirmarPulsado || this.entrada.toquePulsado) {
+          this.confirmacionPendiente = true;
+        }
         if (this.temporizador <= 0 && this.confirmacionPendiente) {
           this.confirmacionPendiente = false;
           this.empezar();
@@ -337,7 +437,7 @@ export class Partida {
 
       case FASE.BONUS:
         this.bonus.actualizar(dt);
-        this.taza.actualizar(dt, this.entrada, this.tiempo);
+        this._actualizarTaza(dt);
         this.disparosJugador.actualizar(dt);
         this._colisionesBonus();
         if (this.bonus.terminada) {
@@ -366,32 +466,11 @@ export class Partida {
         return;
     }
 
-    if (this.entrada.pausaPulsada) {
-      this.pausar();
-      this.entrada.finPaso();
-      return;
-    }
-
     this.formacion.actualizar(dt);
 
-    const disparosAntes = this.taza.disparosRealizados;
-    const invulnerableAntes = this.taza.invulnerable;
-    this.taza.actualizar(dt, this.entrada, this.tiempo);
-    if (this.taza.disparosRealizados > disparosAntes) this.audio.disparo();
-    // Al acabarse la invulnerabilidad suena un aviso: nunca se vuelve a ser
-    // mortal en silencio.
-    if (invulnerableAntes > 0 && this.taza.invulnerable <= 0) {
-      this.audio.finInvulnerabilidad();
-    }
-
+    this._actualizarTaza(dt);
     this.disparosJugador.actualizar(dt);
     this.disparosEnemigos.actualizar(dt);
-
-    // El zumbido de la escuadra aprieta conforme quedan menos enemigos: el
-    // propio ritmo te dice cuánto te falta sin mirar la pantalla.
-    const vivos = this.formacion.vivos.length;
-    const tension = 1 - vivos / FORMACION.TOTAL;
-    this.audio.actualizarMusica(dt, Math.max(0, Math.min(1, tension)));
 
     if (this.fase === FASE.COMBATE) this._ordenarAtaques(dt);
     this._dispararDesdePicados();
@@ -430,13 +509,29 @@ export class Partida {
     this.recargaAtaque = salidos ? espera : ATAQUES.ESCALON_ENTRE_AVISOS * 4;
   }
 
+  /**
+   * Aplica la dificultad del ciclo a un proyectil enemigo, pero NUNCA por
+   * encima del techo absoluto.
+   *
+   * Ese techo es una promesa de juego limpio: a 300 px/s un proyectil tarda
+   * 1,7 s en cruzar la pantalla, así que siempre da tiempo a esquivarlo. Sin
+   * este tope, en la fase 20 los granos del jefe caerían al doble de velocidad
+   * y el ataque pasaría de difícil a imposible.
+   */
+  _velocidadProyectilEnemigo(base) {
+    return Math.min(
+      DISPARO_ENEMIGO.VELOCIDAD_MAXIMA_ABSOLUTA,
+      base * this.multiplicadorVelocidad
+    );
+  }
+
   /** Los enemigos en picado sueltan su disparo a mitad del recorrido. */
   _dispararDesdePicados() {
     for (const e of this.formacion.tiradoresEnPicado()) {
       const salio = this.disparosEnemigos.lanzar(
         e.x,
         e.y + DISPARO_ENEMIGO.DESPLAZAMIENTO_ORIGEN,
-        DISPARO_ENEMIGO.VELOCIDAD * this.multiplicadorVelocidad
+        this._velocidadProyectilEnemigo(DISPARO_ENEMIGO.VELOCIDAD)
       );
       if (salio) this.audio.disparoEnemigo();
     }
@@ -452,8 +547,21 @@ export class Partida {
   async _consultarRanking() {
     this.entraEnRanking = false;
     if (!this.ajustes.puntuaValida || this.puntos <= 0) return;
-    const entra = await entraEnRanking(this.puntos);
-    this.entraEnRanking = entra === true;
+
+    // La consulta puede tardar hasta seis segundos. Si el jugador reintenta
+    // antes de que llegue, la respuesta de la partida ANTERIOR podría aterrizar
+    // sobre la nueva y pedirle iniciales a quien no entra, o al contrario. El
+    // contador descarta las respuestas que ya no vienen a cuento.
+    const generacion = (this._generacionRanking ?? 0) + 1;
+    this._generacionRanking = generacion;
+
+    try {
+      const entra = await entraEnRanking(this.puntos);
+      if (generacion !== this._generacionRanking) return;   // llegó tarde
+      this.entraEnRanking = entra === true;
+    } catch {
+      if (generacion === this._generacionRanking) this.entraEnRanking = false;
+    }
   }
 
   /** El enfrentamiento con la Gran Tostadora Cósmica. */
@@ -463,10 +571,12 @@ export class Partida {
     // Durante su entrada en escena el jugador conserva el control y es
     // invulnerable: es un acontecimiento, no una trampa.
     if (this.jefe.estado === ESTADO_JEFE.ENTRANDO) {
-      this.taza.invulnerable = Math.max(this.taza.invulnerable, 0.2);
+      this.taza.invulnerable = Math.max(
+        this.taza.invulnerable, JEFE.INVULNERABILIDAD_EN_ENTRADA
+      );
     }
 
-    this.taza.actualizar(dt, this.entrada, this.tiempo);
+    this._actualizarTaza(dt);
     this.disparosJugador.actualizar(dt);
     this.disparosEnemigos.actualizar(dt);
 
@@ -475,7 +585,9 @@ export class Partida {
     if (salidas) {
       const config = JEFE.ATAQUES[this.jefe.ataque];
       for (const s of salidas) {
-        const vy = config.velocidadProyectil * (s.factorVy ?? 1) * this.multiplicadorVelocidad;
+        const vy = this._velocidadProyectilEnemigo(
+          config.velocidadProyectil * (s.factorVy ?? 1)
+        );
         if (this.disparosEnemigos.lanzar(s.x, s.y, vy, s.vx ?? 0)) {
           this.audio.disparoEnemigo();
         }
@@ -511,12 +623,16 @@ export class Partida {
         // Al cruzar un umbral, sí se siente: se le rompe algo.
         this.congelacion = congelacion;
         this._sacudir(EFECTOS.SACUDIDA.enemigoGrande);
-        this.particulas.explosionEnemigo(p.x, p.y, 20, COL_JEFE.LATON_BRILLO);
+        this.particulas.explosionEnemigo(
+          p.x, p.y, JEFE.PARTICULAS_UMBRAL, COL_JEFE.LATON_BRILLO
+        );
         this.audio.explosionGrande();
       }
 
       if (this.jefe.estado === ESTADO_JEFE.MURIENDO) {
-        this.particulas.explosionEnemigo(this.jefe.x, this.jefe.y, 60, COL_JEFE.LATON_BRILLO);
+        this.particulas.explosionEnemigo(
+          this.jefe.x, this.jefe.y, JEFE.PARTICULAS_MUERTE, COL_JEFE.LATON_BRILLO
+        );
         this._sacudir(EFECTOS.SACUDIDA.jefe);
         this.congelacion = EFECTOS.HITSTOP_MS.jefe;
         this.audio.explosionGrande();
@@ -543,9 +659,12 @@ export class Partida {
    * objetivos. Nada puede tocar a la taza, y eso es intencionado.
    */
   _colisionesBonus() {
+    // Se calcula UNA vez, no dentro del bucle de balas.
+    const objetivos = this.bonus.alcanzables;
     for (const p of this.disparosJugador.lista) {
       if (!p.activo) continue;
-      for (const o of this.bonus.alcanzables) {
+      for (const o of objetivos) {
+        if (!o.vivo) continue;
         if (!proyectilTocaCirculo(p, o.x, o.y, o.radio)) continue;
 
         this.disparosJugador.apagar(p);
@@ -643,9 +762,16 @@ export class Partida {
       this.confirmacionPendiente = false;
       this.rankingPedido = false;
       this.audio.pararMusica();
-      setTimeout(() => this.audio.finPartida(), 700);
+      // Se guardan los identificadores para poder cancelarlos: si el jugador
+      // reintenta o vuelve al inicio antes de que salten, la melodía de derrota
+      // sonaría encima del título o mezclada con la fanfarria de comienzo.
+      this._sonidosAplazados = [
+        setTimeout(() => this.audio.finPartida(), TIEMPOS.SONIDO_FIN_PARTIDA * 1000),
+      ];
       if (this.puntos > this.recordAlEmpezar) {
-        setTimeout(() => this.audio.nuevoRecord(), 1600);
+        this._sonidosAplazados.push(
+          setTimeout(() => this.audio.nuevoRecord(), TIEMPOS.SONIDO_RECORD * 1000)
+        );
       }
       // Se pregunta al ranking mientras el jugador ve su puntuación, para que
       // el paso a las iniciales sea inmediato y no haya que esperar a la red.
@@ -726,7 +852,7 @@ export class Partida {
     }
 
     // El telegrafiado va DEBAJO de todo lo demás: avisa, pero nunca tapa.
-    if (this.fase === FASE.JEFE) dibujarTelegrafiadoJefe(ctx, this.jefe, this.tiempo);
+    if (this.eraFaseDeJefe) dibujarTelegrafiadoJefe(ctx, this.jefe, this.tiempo);
 
     this._dibujarEnemigos(ctx);
     this._dibujarObjetivosBonus(ctx);
@@ -797,7 +923,11 @@ export class Partida {
   }
 
   _dibujarJefe(ctx) {
-    if (this.fase !== FASE.JEFE || !this.jefe.vivo) return;
+    // Se comprueba si el jefe está vivo, NO si la fase es la del jefe: al
+    // morir el jugador la fase cambia en el mismo paso, y el jefe desaparecía
+    // de golpe justo en el fotograma en que te mata. Lo que te mata tiene que
+    // seguir viéndose.
+    if (!this.eraFaseDeJefe || !this.jefe.vivo) return;
     const jefe = this.jefe;
 
     ctx.save();
@@ -816,7 +946,7 @@ export class Partida {
     // Destello local al recibir un impacto.
     if (jefe.destello > 0) {
       ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = (jefe.destello / 0.06) * 0.25;
+      ctx.globalAlpha = (jefe.destello / JEFE.DESTELLO_IMPACTO) * 0.25;
       ctx.fillStyle = COL_JUGADOR.PORCELANA_ESPECULAR;
       ctx.fillRect(-JEFE.ANCHO / 2, -JEFE.ALTO / 2, JEFE.ANCHO, JEFE.ALTO);
     }
@@ -837,7 +967,7 @@ export class Partida {
     }
   }
 
-  _dibujarPuntosFlotantes(ctx, dt) {
+  _dibujarPuntosFlotantes(ctx) {
     for (const p of this.puntosFlotantes) {
       if (p.vida <= 0) continue;
       const avance = 1 - p.vida / TIEMPOS.PUNTOS_FLOTANTES;
@@ -924,17 +1054,22 @@ export class Partida {
     }
   }
 
-  /** ¿Hay alguna amenaza cerca de un cartel? Si la hay, el cartel se aparta. */
-  _alphaCartel(y) {
-    let alpha = 1;
+  /**
+   * ¿Hay alguna amenaza cerca de un cartel? Si la hay, el cartel se aparta.
+   * Ningún texto puede participar en la muerte del jugador.
+   *
+   * Se comprueban las dos coordenadas: mirando solo la altura, un proyectil en
+   * el borde izquierdo atenuaba un cartel centrado sin necesidad.
+   */
+  _alphaCartel(y, x = PANTALLA.ANCHO / 2) {
+    const radio = CARTELES.DISTANCIA_ATENUACION;
     for (const p of this.disparosEnemigos.lista) {
       if (!p.activo) continue;
-      if (Math.abs(p.y - y) < CARTELES.DISTANCIA_ATENUACION) {
-        alpha = CARTELES.ALPHA_ATENUADO;
-        break;
+      if (Math.abs(p.y - y) < radio && Math.abs(p.x - x) < radio * 2) {
+        return CARTELES.ALPHA_ATENUADO;
       }
     }
-    return alpha;
+    return 1;
   }
 
   _dibujarCarteles(ctx) {
@@ -991,12 +1126,13 @@ export class Partida {
       const avance = 1 - this.jefe.temporizador / JEFE.ENTRADA;
       if (avance > 0.16) {
         const parpadeo = Math.sin(this.tiempo * 19) > -0.3;
+        const visible = this._alphaCartel(240);
         dibujarTexto(ctx, '¡ALERTA!', centro, 240, {
           tamano: TIPOGRAFIA.TAMANOS.ENCABEZADO,
           color: COL_PELIGRO.PROYECTIL,
           espaciado: TIPOGRAFIA.ESPACIADOS.ENCABEZADO,
           alineacion: 'centro',
-          alpha: parpadeo ? 1 : 0.25,
+          alpha: (parpadeo ? 1 : 0.25) * visible,
         });
         // Se dibuja letra a letra: el nombre se va revelando.
         const nombre = JEFE.NOMBRE.toUpperCase();
@@ -1036,6 +1172,7 @@ export class Partida {
         color: HUD.TEXTO_PRIMARIO,
         espaciado: TIPOGRAFIA.ESPACIADOS.VALOR,
         alineacion: 'centro',
+        alpha: this._alphaCartel(62),
       });
     }
 

@@ -358,6 +358,13 @@ export class Audio {
     const bpm = 132 + tension * 36;
     const duracionPaso = 60 / bpm / 4;   // un paso = una semicorchea
 
+    // Red de seguridad: si el compás se ha quedado muy atrás (una pausa larga,
+    // una pestaña en segundo plano), se resincroniza en lugar de intentar
+    // recuperar todas las notas perdidas, que sonarían amontonadas de golpe.
+    if (this._instanteProximoPaso < this.ctx.currentTime - 0.5) {
+      this._instanteProximoPaso = this.ctx.currentTime + 0.05;
+    }
+
     // Se programan por adelantado todos los pasos que caigan en la próxima
     // décima de segundo.
     const horizonte = this.ctx.currentTime + 0.12;

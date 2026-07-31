@@ -55,6 +55,11 @@ export class Enemigo {
     this.angulo = 0;          // hacia dónde mira al trazar una curva
     this.balanceo = 0;
 
+    // La velocidad de esta fase, ya con la dificultad del ciclo aplicada. Es
+    // la referencia para cualquier cambio posterior, para que los cambios no
+    // se vayan acumulando unos sobre otros.
+    this.velocidadBase = this.def.velocidad;
+
     // Cada unidad anima con un desfase propio para que la escuadra respire
     // en ola diagonal en lugar de moverse como un bloque.
     this.desfase =
@@ -125,7 +130,14 @@ export class Enemigo {
 
   enfurecer() {
     this.estado = ESTADO_ENEMIGO.ENFURECIDO;
-    this.velocidad = this.def.velocidad * FORMACION.MULTIPLICADOR_VELOCIDAD_ENFURECIDOS;
+    // Se parte de la velocidad BASE de esta fase, no de la actual.
+    //
+    // Partir de la actual parecía lo correcto (conserva el multiplicador de
+    // dificultad del ciclo), pero `enfurecer()` se llama al terminar CADA
+    // ataque, así que la velocidad se multiplicaba una y otra vez: tras unas
+    // vueltas los dos últimos enemigos iban tan rápido que no se les podía
+    // alcanzar y la oleada no terminaba nunca.
+    this.velocidad = this.velocidadBase * FORMACION.MULTIPLICADOR_VELOCIDAD_ENFURECIDOS;
   }
 
   get estaEnFormacion() {
@@ -250,7 +262,7 @@ export class Enemigo {
     // Si quedan muy pocos compañeros, ya no vuelve: se queda atacando hasta
     // que lo destruyan. Lo pide el documento de diseño y evita el anticlímax
     // de perseguir a dos enemigos que se esconden arriba.
-    if (formacion.vivos.length <= FORMACION.UMBRAL_ENFURECIDOS) {
+    if (formacion.cuantosVivos <= FORMACION.UMBRAL_ENFURECIDOS) {
       this.enfurecer();
       this.distancia = 0;
       this.origenX = this.x;

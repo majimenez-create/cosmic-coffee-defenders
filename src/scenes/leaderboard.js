@@ -26,6 +26,26 @@ const T = TIPOGRAFIA.TAMANOS;
 const E = TIPOGRAFIA.ESPACIADOS;
 
 const LETRAS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ ';
+
+/**
+ * Maquetación de las tres ruedas, en un solo sitio.
+ *
+ * Se comparte entre el dibujado y la detección de toques a propósito: si
+ * estuvieran duplicadas, mover una rueda en pantalla sin mover su zona tocable
+ * rompería el táctil sin que nada avisara.
+ */
+const RUEDAS = {
+  ancho: 52,
+  alto: 64,
+  separacion: 26,
+  y: 260,
+  yConfirmar: 560,
+  /** El bloque de tres ruedas, centrado en la pantalla. */
+  get inicioX() {
+    const total = this.ancho * 3 + this.separacion * 2;
+    return (PANTALLA.ANCHO - total) / 2;
+  },
+};
 const VISTA = { INICIALES: 'iniciales', ENVIANDO: 'enviando', TABLA: 'tabla' };
 const SEGUNDOS_PARA_ESCRIBIR = 20;
 
@@ -114,6 +134,11 @@ export class PantallaRanking {
         this.rueda = Math.min(2, this.rueda + 1);
         this.audio.disparo();
       }
+      // En un móvil no hay flechas ni Enter, así que las ruedas tienen que ser
+      // tocables: sin esto, el jugador se quedaba mirando hasta que el
+      // temporizador confirmaba "AAA" por él.
+      if (e.toquePulsado && e.ultimoToque) this._tocar(e.ultimoToque);
+
       if (e.confirmarPulsado) { this._confirmar(); }
       e.finPaso();
       return;
@@ -125,6 +150,25 @@ export class PantallaRanking {
     }
 
     e.finPaso();
+  }
+
+  /**
+   * Un toque sobre las ruedas: por encima sube la letra, por debajo la baja, y
+   * sobre la rueda misma la selecciona. Tocar el botón de abajo confirma.
+   */
+  _tocar({ x, y }) {
+    if (y >= RUEDAS.yConfirmar) { this._confirmar(); return; }
+
+    for (let i = 0; i < 3; i++) {
+      const izq = RUEDAS.inicioX + i * (RUEDAS.ancho + RUEDAS.separacion);
+      if (x < izq - 6 || x > izq + RUEDAS.ancho + 6) continue;
+
+      this.rueda = i;
+      if (y < RUEDAS.y) this._girar(-1);
+      else if (y > RUEDAS.y + RUEDAS.alto) this._girar(1);
+      else this.audio.impacto();
+      return;
+    }
   }
 
   _girar(direccion) {
@@ -163,11 +207,11 @@ export class PantallaRanking {
       espaciado: E.ETIQUETA, alineacion: 'centro',
     });
 
-    // Las tres ruedas.
-    const anchoRueda = 52;
-    const inicioX = centro - anchoRueda - 26;
+    // Las tres ruedas. En táctil, TODAS muestran sus flechas: son la única
+    // forma de cambiar la letra con el dedo, así que tienen que verse.
+    const tactil = this.entrada.esTactil;
     for (let i = 0; i < 3; i++) {
-      const x = inicioX + i * (anchoRueda + 26);
+      const x = RUEDAS.inicioX + i * (RUEDAS.ancho + RUEDAS.separacion);
       const elegida = i === this.rueda;
 
       ctx.save();
@@ -175,37 +219,55 @@ export class PantallaRanking {
       ctx.lineWidth = elegida ? 2 : 1;
       ctx.globalAlpha = elegida ? 1 : 0.5;
       ctx.beginPath();
-      ctx.roundRect(x, 260, anchoRueda, 64, 6);
+      ctx.roundRect(x, RUEDAS.y, RUEDAS.ancho, RUEDAS.alto, 6);
       ctx.stroke();
       ctx.restore();
 
       dibujarTexto(ctx, this.letras[i] === ' ' ? '␣' : this.letras[i],
-        x + anchoRueda / 2, 292, {
+        x + RUEDAS.ancho / 2, RUEDAS.y + 32, {
           tamano: T.ENCABEZADO,
           color: elegida ? HUD.TEXTO_PRIMARIO : HUD.CUERPO_TEXTO,
           alineacion: 'centro',
         });
 
-      // Flechas de la rueda elegida, latiendo.
-      if (elegida) {
-        const late = Math.sin(this.tiempo * 8) > 0 ? 1 : 0.4;
-        dibujarTexto(ctx, '▲', x + anchoRueda / 2, 246, {
+      if (elegida || tactil) {
+        const late = elegida && Math.sin(this.tiempo * 8) > 0 ? 1 : 0.45;
+        dibujarTexto(ctx, '▲', x + RUEDAS.ancho / 2, RUEDAS.y - 14, {
           tamano: 10, color: COL_JUGADOR.CIAN, alineacion: 'centro', alpha: late,
         });
-        dibujarTexto(ctx, '▼', x + anchoRueda / 2, 338, {
+        dibujarTexto(ctx, '▼', x + RUEDAS.ancho / 2, RUEDAS.y + RUEDAS.alto + 14, {
           tamano: 10, color: COL_JUGADOR.CIAN, alineacion: 'centro', alpha: late,
         });
       }
     }
 
-    dibujarTexto(ctx, '↑ ↓ LETRA    ← → RUEDA    ENTER CONFIRMAR', centro, 388, {
-      tamano: T.ETIQUETA_HUD, color: HUD.ETIQUETA,
-      espaciado: E.ETIQUETA, alineacion: 'centro',
-    });
-    dibujarTexto(ctx, 'O ESCRIBE DIRECTAMENTE CON EL TECLADO', centro, 404, {
-      tamano: T.ETIQUETA_HUD, color: HUD.ETIQUETA,
-      espaciado: E.ETIQUETA, alineacion: 'centro', alpha: 0.7,
-    });
+    if (tactil) {
+      ctx.save();
+      ctx.globalAlpha = 0.4;
+      ctx.strokeStyle = HUD.MARCO;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(centro - 70, RUEDAS.yConfirmar, 140, 30, 4);
+      ctx.stroke();
+      ctx.restore();
+      dibujarTexto(ctx, 'CONFIRMAR', centro, RUEDAS.yConfirmar + 15, {
+        tamano: T.ETIQUETA_HUD, color: HUD.TEXTO_PRIMARIO,
+        espaciado: E.ETIQUETA, alineacion: 'centro',
+      });
+      dibujarTexto(ctx, 'TOCA LAS FLECHAS PARA CAMBIAR LA LETRA', centro, 396, {
+        tamano: T.ETIQUETA_HUD, color: HUD.ETIQUETA,
+        espaciado: E.ETIQUETA, alineacion: 'centro',
+      });
+    } else {
+      dibujarTexto(ctx, '↑ ↓ LETRA    ← → RUEDA    ENTER CONFIRMAR', centro, 396, {
+        tamano: T.ETIQUETA_HUD, color: HUD.ETIQUETA,
+        espaciado: E.ETIQUETA, alineacion: 'centro',
+      });
+      dibujarTexto(ctx, 'O ESCRIBE DIRECTAMENTE CON EL TECLADO', centro, 412, {
+        tamano: T.ETIQUETA_HUD, color: HUD.ETIQUETA,
+        espaciado: E.ETIQUETA, alineacion: 'centro', alpha: 0.7,
+      });
+    }
 
     // Barra de tiempo. Se llena de rojo cuando queda poco.
     const proporcion = Math.max(0, this.restante / SEGUNDOS_PARA_ESCRIBIR);
@@ -215,7 +277,7 @@ export class PantallaRanking {
     ctx.fillStyle = HUD.ETIQUETA;
     ctx.fillRect(centro - ancho / 2, 450, ancho, 3);
     ctx.globalAlpha = 1;
-    ctx.fillStyle = proporcion < 0.25 ? HUD.AVISO : COL_JUGADOR.CIAN;
+    ctx.fillStyle = proporcion < 0.25 ? HUD.AVISO_SUAVE : COL_JUGADOR.CIAN;
     ctx.fillRect(centro - ancho / 2, 450, ancho * proporcion, 3);
     ctx.restore();
   }
@@ -247,7 +309,7 @@ export class PantallaRanking {
 
     if (this.error) {
       dibujarTexto(ctx, this.error, centro, 280, {
-        tamano: T.ETIQUETA_HUD, color: HUD.AVISO,
+        tamano: T.ETIQUETA_HUD, color: HUD.AVISO_SUAVE,
         espaciado: E.ETIQUETA, alineacion: 'centro',
       });
       dibujarTexto(ctx, 'SE ENVIARÁ CUANDO VUELVA LA CONEXIÓN', centro, 300, {

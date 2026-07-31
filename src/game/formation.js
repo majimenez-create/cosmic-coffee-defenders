@@ -47,7 +47,10 @@ export class Formacion {
       const tipo = tipos[Math.min(fila, tipos.length - 1)];
       for (let col = 0; col < FORMACION.COLUMNAS; col++) {
         const enemigo = new Enemigo(tipo, col, fila);
-        enemigo.velocidad = enemigo.def.velocidad * velocidad;
+        // La velocidad base ya incluye la dificultad del ciclo, y es la
+        // referencia para el enfurecimiento posterior.
+        enemigo.velocidadBase = enemigo.def.velocidad * velocidad;
+        enemigo.velocidad = enemigo.velocidadBase;
         this.enemigos.push(enemigo);
       }
     }
@@ -79,6 +82,16 @@ export class Formacion {
 
   get vivos() {
     return this.enemigos.filter((e) => e.vivo);
+  }
+
+  /**
+   * Cuántos quedan, sin crear un array. Se consulta cada fotograma para la
+   * tensión de la música y en cada fin de picado, así que aquí sí importa.
+   */
+  get cuantosVivos() {
+    let n = 0;
+    for (const e of this.enemigos) if (e.vivo) n++;
+    return n;
   }
 
   get quedanVivos() {

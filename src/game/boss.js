@@ -102,7 +102,7 @@ export class Jefe {
 
     const nivelAntes = this.nivelDano;
     this.vida--;
-    this.destello = 0.06;
+    this.destello = JEFE.DESTELLO_IMPACTO;
 
     if (this.vida <= 0) {
       this.estado = ESTADO_JEFE.MURIENDO;
@@ -125,8 +125,10 @@ export class Jefe {
     this.tiempo += dt;
     this.destello = Math.max(0, this.destello - dt);
 
-    // Desde el tercer umbral tiembla de forma permanente.
-    this.temblor = this.nivelDano >= 3 ? (this.nivelDano >= 4 ? 2 : 1) : 0;
+    // Desde el tercer umbral tiembla de forma permanente, y más al cuarto.
+    if (this.nivelDano >= JEFE.UMBRAL_TEMBLOR_FUERTE) this.temblor = 2;
+    else if (this.nivelDano >= JEFE.UMBRAL_TEMBLOR) this.temblor = 1;
+    else this.temblor = 0;
 
     switch (this.estado) {
       case ESTADO_JEFE.ENTRANDO:
@@ -137,7 +139,7 @@ export class Jefe {
         this.tiempoMuerte += dt;
         this.temporizador -= dt;
         // Pierde la sustentación: desciende y se inclina.
-        this.y += 22 * dt;
+        this.y += JEFE.VELOCIDAD_CAIDA * dt;
         if (this.temporizador <= 0) this.estado = ESTADO_JEFE.MUERTO;
         break;
 
@@ -237,6 +239,7 @@ export class Jefe {
     if (this.ataque === 'granos') {
       this._elegirCarrilesSeguros(jugadorX);
       this.recargaGranos = 0;
+      this.rafagaActual = 0;
     }
   }
 
@@ -322,13 +325,30 @@ export class Jefe {
 
     if (this.ataque === 'granos') {
       if (this.recargaGranos > 0) return null;
-      this.recargaGranos = 1 / JEFE.GRANOS_POR_SEGUNDO_Y_CARRIL;
-      // Un grano por carril peligroso, cayendo desde la tolva.
-      return this.carrilesPeligrosos.map((carril) => ({
-        x: carril * JEFE.ANCHO_CARRIL + JEFE.ANCHO_CARRIL / 2,
-        y: this.y + JEFE.ALTO * 0.2,
-        vx: 0,
-      }));
+      this.recargaGranos = 1 / JEFE.RAFAGAS_DE_GRANOS_POR_SEGUNDO;
+
+      // Solo DOS carriles por ráfaga, alternando, en lugar de todos a la vez.
+      //
+      // El motivo es concreto: solo caben 8 proyectiles enemigos en pantalla
+      // (regla de la biblia). Lanzando en los cuatro carriles peligrosos a la
+      // vez, a partir del primer segundo el tope se llenaba y los granos
+      // siguientes se descartaban sin más: quedaban carriles marcados en rojo
+      // por los que no caía nada, que es lo peor que puede pasarle a un aviso.
+      //
+      // Alternando, la lluvia es continua de principio a fin y además se lee
+      // mejor: se ve venir el patrón en lugar de una cortina uniforme.
+      const peligrosos = this.carrilesPeligrosos;
+      const salidas = [];
+      for (let i = 0; i < JEFE.CARRILES_POR_RAFAGA; i++) {
+        const carril = peligrosos[(this.rafagaActual + i * 2) % peligrosos.length];
+        salidas.push({
+          x: carril * JEFE.ANCHO_CARRIL + JEFE.ANCHO_CARRIL / 2,
+          y: this.y + JEFE.ALTO * 0.2,
+          vx: 0,
+        });
+      }
+      this.rafagaActual++;
+      return salidas;
     }
 
     return null;

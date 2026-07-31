@@ -41,10 +41,11 @@ function cabeceras(extra = {}) {
 
 /** Corta la espera si el servidor no responde: el juego no puede quedarse colgado. */
 function conTiempoLimite(promesa, ms = ESPERA_MAXIMA) {
-  return Promise.race([
-    promesa,
-    new Promise((_, rechazar) => setTimeout(() => rechazar(new Error('tiempo agotado')), ms)),
-  ]);
+  let temporizador;
+  const limite = new Promise((_, rechazar) => {
+    temporizador = setTimeout(() => rechazar(new Error('tiempo agotado')), ms);
+  });
+  return Promise.race([promesa, limite]).finally(() => clearTimeout(temporizador));
 }
 
 /**
@@ -58,7 +59,19 @@ export async function leerRanking() {
     const consulta = `${URL_BASE}?select=iniciales,puntos,fase&order=puntos.desc,creado_en.asc&limit=${TOPE}`;
     const respuesta = await conTiempoLimite(fetch(consulta, { headers: cabeceras() }));
     if (!respuesta.ok) return null;
-    return await respuesta.json();
+
+    const datos = await respuesta.json();
+    // Nada de lo que llega por la red se dibuja sin comprobar. Dos motivos:
+    // si la respuesta no fuera un array, el dibujado fallaría en CADA
+    // fotograma; y las iniciales las escribe otra persona, así que aunque la
+    // base de datos las limite, el cliente no tiene por qué confiar.
+    if (!Array.isArray(datos)) return null;
+
+    return datos.slice(0, TOPE).map((f) => ({
+      iniciales: normalizarIniciales(String(f?.iniciales ?? '')),
+      puntos: Math.max(0, Math.min(99999999, Math.floor(Number(f?.puntos) || 0))),
+      fase: Math.max(1, Math.min(9999, Math.floor(Number(f?.fase) || 1))),
+    }));
   } catch {
     return null;
   }
@@ -95,17 +108,38 @@ async function _intentarEnviar(fila) {
   }
 }
 
-/** Reintenta lo que quedó pendiente. Se llama al volver la conexión. */
+/**
+ * Reintenta lo que quedó pendiente. Se llama al volver la conexión.
+ *
+ * El cerrojo y el vaciado previo de la cola no son adornos: sin ellos, dos
+ * llamadas simultáneas (por ejemplo entrar en la pantalla de récords justo
+ * cuando vuelve la conexión) leían la misma cola y enviaban las mismas filas
+ * dos veces. Y una puntuación duplicada en el ranking NO SE PUEDE BORRAR: por
+ * diseño no existe permiso de borrado.
+ */
+let reintentoEnMarcha = false;
+
 export async function reintentarPendientes() {
+  if (reintentoEnMarcha) return;
+
   const cola = _leerCola();
   if (!cola.length) return;
 
-  const quedan = [];
-  for (const fila of cola) {
-    const enviada = await _intentarEnviar(fila);
-    if (!enviada) quedan.push(fila);
+  reintentoEnMarcha = true;
+  // Se vacía ANTES de enviar: así una segunda llamada no encuentra nada que
+  // duplicar. Lo que falle se vuelve a encolar.
+  _guardarCola([]);
+
+  try {
+    const quedan = [];
+    for (const fila of cola) {
+      const enviada = await _intentarEnviar(fila);
+      if (!enviada) quedan.push(fila);
+    }
+    if (quedan.length) _guardarCola(quedan);
+  } finally {
+    reintentoEnMarcha = false;
   }
-  _guardarCola(quedan);
 }
 
 /**
@@ -143,7 +177,9 @@ function _leerCola() {
 
 function _guardarCola(cola) {
   try {
-    if (cola.length) localStorage.setItem(CLAVE_COLA, JSON.stringify(cola.slice(0, 20)));
+    // slice(-20) y no slice(0,20): si hay que descartar, se descartan las
+    // MÁS VIEJAS. Al contrario se tiraban las puntuaciones recién hechas.
+    if (cola.length) localStorage.setItem(CLAVE_COLA, JSON.stringify(cola.slice(-20)));
     else localStorage.removeItem(CLAVE_COLA);
   } catch { /* modo privado */ }
 }

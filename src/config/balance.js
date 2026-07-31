@@ -372,10 +372,27 @@ export const JEFE = {
   PAUSA_MINIMA_ENTRE_ATAQUES: 1.2,     // sin un solo píxel magenta en pantalla:
                                        // ese silencio es lo que hace legible
                                        // el siguiente aviso
-  GRANOS_POR_SEGUNDO_Y_CARRIL: 2.4,    // densidad de la lluvia
+  /**
+   * Densidad de la lluvia de granos, calculada para no chocar con el tope de 8
+   * proyectiles enemigos en pantalla.
+   *
+   * Un grano tarda unos 1,6 s en cruzar la pantalla, así que el máximo
+   * sostenible son unos 5 granos por segundo. Con 2 carriles por ráfaga y 2,2
+   * ráfagas por segundo salen 4,4: la lluvia es continua de principio a fin y
+   * nunca se pierde ningún grano por falta de sitio.
+   */
+  RAFAGAS_DE_GRANOS_POR_SEGUNDO: 2.2,
+  CARRILES_POR_RAFAGA: 2,
 
   ENTRADA: 4.5,                // segundos de puesta en escena
   MUERTE: 2.2,                 // segundos de secuencia de destrucción
+  DESTELLO_IMPACTO: 0.06,      // el parpadeo al recibir un golpe
+  INVULNERABILIDAD_EN_ENTRADA: 0.2, // el jugador no puede morir mientras entra
+  PARTICULAS_UMBRAL: 20,       // al romperse una pieza
+  PARTICULAS_MUERTE: 60,
+  UMBRAL_TEMBLOR: 3,           // desde qué nivel de daño tiembla
+  UMBRAL_TEMBLOR_FUERTE: 4,
+  VELOCIDAD_CAIDA: 22,         // px/s mientras se desploma
 };
 
 /**
@@ -416,6 +433,8 @@ export const TIEMPOS = {
   DESTELLO_IMPACTO: 0.08,      // el parpadeo blanco del enemigo golpeado
   PUNTOS_FLOTANTES: 0.6,       // lo que dura el "+200" al abatir en picado
   AVISO_SILENCIO: 0.9,         // el cartel de SONIDO OFF / SONIDO ON
+  SONIDO_FIN_PARTIDA: 0.7,     // cuándo suena la melodía de derrota
+  SONIDO_RECORD: 1.6,          // y cuándo la fanfarria de récord, después
 };
 
 /** Posición vertical de cada cartel, para que no bailen entre pantallas. */

@@ -176,6 +176,10 @@ export const JEFE = {
   FISURA: '#FFD27A',           // las grietas por las que se escapa el calor
   HUMO_NEGRO: '#2A2018',
   AURA_CALOR: '#FF8A3D',
+  AURA_CALOR_RGB: '255,138,61', // el mismo color, para poder darle opacidad
+  VAPOR: '#DCE9F5',
+  HUECO_INTERIOR: '#1A2230',   // el fondo de un boquete cuando salta una placa
+  CRISTAL_GRIETA: '#F4F7FB',
 };
 
 // ---------------------------------------------------------------------------
@@ -219,6 +223,8 @@ export const HUD = {
   SELECCION: '#FFB020',
   CURSOR: '#3FD2FF',
   AVISO: '#FF2D6F',            // solo para "vida perdida"
+  AVISO_SUAVE: '#FFB020',       // avisos que NO son peligro (sin conexión, tiempo
+                                // agotándose). El magenta está reservado.
   RECORD_NUEVO: '#7BE06A',
   MARCO: '#C2703A',
 };

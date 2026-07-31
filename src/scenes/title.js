@@ -97,11 +97,12 @@ export class Portada {
       this.ir('ajustes');
     } else if (this.entrada.recordsPulsado) {
       this.ir('ranking', null);
-    // OJO: para EMPEZAR hace falta un toque de verdad (hayTactil), no la
-    // detección previa (esTactil). Con la detección previa, la portada
-    // arrancaba la partida sola en cuanto se abría en un móvil.
+    // OJO: aquí va `toquePulsado`, que dura un solo paso, y NO `hayTactil`,
+    // que se queda a true para siempre desde el primer toque. Con `hayTactil`,
+    // al volver a la portada desde cualquier sitio la partida arrancaba en el
+    // primer fotograma y la portada quedaba inalcanzable el resto de la sesión.
     } else if (this.entrada.confirmarPulsado || this.entrada.disparoPulsado ||
-               this.entrada.hayTactil) {
+               this.entrada.toquePulsado) {
       this.audio.comenzar();
       this.ir('partida');
     }
