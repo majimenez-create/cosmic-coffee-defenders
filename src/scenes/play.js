@@ -12,17 +12,19 @@
 import {
   PANTALLA, DISPARO, DISPARO_ENEMIGO, ATAQUES, PUNTUACION, PROGRESION,
   CICLO_FASES, JUGADOR as CFG_JUGADOR, EFECTOS, TIEMPOS, CARTELES, FORMACION,
-  BONUS,
+  BONUS, JEFE,
 } from '../config/balance.js';
 import {
   HUD, FONDO, JUGADOR as COL_JUGADOR, ENEMIGOS as COL_ENEMIGOS, TIPOGRAFIA,
-  DISPARO_JUGADOR as COL_DISPARO, PELIGRO as COL_PELIGRO,
+  DISPARO_JUGADOR as COL_DISPARO, PELIGRO as COL_PELIGRO, JEFE as COL_JEFE,
 } from '../config/palette.js';
 
 import { Taza, ESTADO } from '../game/player.js';
 import { Proyectiles } from '../game/bullets.js';
 import { Formacion } from '../game/formation.js';
 import { FaseBonus } from '../game/bonus.js';
+import { Jefe, ESTADO_JEFE } from '../game/boss.js';
+import { dibujarJefe, dibujarTelegrafiadoJefe } from '../render/bossShape.js';
 import { Particulas } from '../game/particles.js';
 import { proyectilTocaCirculo, circulosTocan } from '../game/collision.js';
 import { Caminos } from '../game/paths.js';
@@ -36,7 +38,7 @@ import {
   dibujarDisparoJugador, dibujarDisparoEnemigo,
 } from '../render/shapes.js';
 import { dibujarHud } from '../render/hud.js';
-import { dibujarTexto } from '../render/text.js';
+import { dibujarTexto, dibujarTextoAjustado } from '../render/text.js';
 import { leerRecord, guardarRecord } from '../services/scoreStore.js';
 
 const FASE = {
@@ -46,6 +48,8 @@ const FASE = {
   BONUS_AVISO: 'bonusAviso',
   BONUS: 'bonus',
   BONUS_RESULTADO: 'bonusResultado',
+  JEFE_AVISO: 'jefeAviso',
+  JEFE: 'jefe',
   PAUSA: 'pausa',
   REANUDANDO: 'reanudando',
   FIN_PARTIDA: 'fin',
@@ -87,6 +91,7 @@ export class Partida {
     this.caminos = new Caminos(CAMINOS_TODOS, new Set(Object.keys(PICADOS)));
     this.formacion = new Formacion(this.caminos);
     this.bonus = new FaseBonus(this.caminos);
+    this.jefe = new Jefe();
     this.taza = new Taza(this.disparosJugador);
 
     this.record = leerRecord();
@@ -160,6 +165,13 @@ export class Partida {
       this.formacion.enemigos = [];
       this.fase = FASE.BONUS_AVISO;
       this.temporizador = BONUS.AVISO_INICIAL;
+      return;
+    }
+
+    if (plantilla.tipo === 'jefe') {
+      this.jefe.reiniciar();
+      this.formacion.enemigos = [];
+      this.fase = FASE.JEFE;
       return;
     }
 
@@ -328,6 +340,12 @@ export class Partida {
         }
         this.entrada.finPaso();
         return;
+
+      // --- El jefe ---
+      case FASE.JEFE:
+        this._actualizarJefe(dt);
+        this.entrada.finPaso();
+        return;
     }
 
     if (this.entrada.pausaPulsada) {
@@ -403,6 +421,88 @@ export class Partida {
         DISPARO_ENEMIGO.VELOCIDAD * this.multiplicadorVelocidad
       );
       if (salio) this.audio.disparoEnemigo();
+    }
+  }
+
+  /** El enfrentamiento con la Gran Tostadora Cósmica. */
+  _actualizarJefe(dt) {
+    this.jefe.actualizar(dt, this.taza.x);
+
+    // Durante su entrada en escena el jugador conserva el control y es
+    // invulnerable: es un acontecimiento, no una trampa.
+    if (this.jefe.estado === ESTADO_JEFE.ENTRANDO) {
+      this.taza.invulnerable = Math.max(this.taza.invulnerable, 0.2);
+    }
+
+    this.taza.actualizar(dt, this.entrada, this.tiempo);
+    this.disparosJugador.actualizar(dt);
+    this.disparosEnemigos.actualizar(dt);
+
+    // Proyectiles del jefe.
+    const salidas = this.jefe.disparosDeEstePaso(dt);
+    if (salidas) {
+      const config = JEFE.ATAQUES[this.jefe.ataque];
+      for (const s of salidas) {
+        const vy = config.velocidadProyectil * (s.factorVy ?? 1) * this.multiplicadorVelocidad;
+        if (this.disparosEnemigos.lanzar(s.x, s.y, vy, s.vx ?? 0)) {
+          this.audio.disparoEnemigo();
+        }
+      }
+    }
+
+    this._colisionesJefe();
+
+    if (this.jefe.estado === ESTADO_JEFE.MUERTO) {
+      this._sumarPuntos(JEFE.PUNTOS);
+      this.fase = FASE.OLEADA_LIMPIADA;
+      this.temporizador = TIEMPOS.FIN_OLEADA;
+      this.audio.oleadaDespejada();
+    }
+  }
+
+  _colisionesJefe() {
+    // --- Tus disparos contra el jefe ---
+    for (const p of this.disparosJugador.lista) {
+      if (!p.activo || this.jefe.invulnerable) continue;
+      if (!proyectilTocaCirculo(p, this.jefe.x, this.jefe.y, this.jefe.radio)) continue;
+
+      this.disparosJugador.apagar(p);
+      this.acertados++;
+
+      const congelacion = this.jefe.recibirImpacto();
+      // El destello es LOCAL, en el punto de impacto: enseña dónde estás
+      // acertando, en lugar de iluminar la máquina entera.
+      this.particulas.impacto(p.x, p.y);
+      this.audio.impacto();
+
+      if (congelacion > 0) {
+        // Al cruzar un umbral, sí se siente: se le rompe algo.
+        this.congelacion = congelacion;
+        this._sacudir(EFECTOS.SACUDIDA.enemigoGrande);
+        this.particulas.explosionEnemigo(p.x, p.y, 20, COL_JEFE.LATON_BRILLO);
+        this.audio.explosionGrande();
+      }
+
+      if (this.jefe.estado === ESTADO_JEFE.MURIENDO) {
+        this.particulas.explosionEnemigo(this.jefe.x, this.jefe.y, 60, COL_JEFE.LATON_BRILLO);
+        this._sacudir(EFECTOS.SACUDIDA.jefe);
+        this.congelacion = EFECTOS.HITSTOP_MS.jefe;
+        this.audio.explosionGrande();
+        // Nunca se puede morir después de haber matado al jefe: todos sus
+        // proyectiles se apagan.
+        this.disparosEnemigos.apagarTodos(null);
+      }
+      break;
+    }
+
+    if (!this.taza.esVulnerable) return;
+
+    // --- Sus proyectiles contra la taza ---
+    for (const p of this.disparosEnemigos.lista) {
+      if (!p.activo) continue;
+      if (!proyectilTocaCirculo(p, this.taza.x, this.taza.y, CFG_JUGADOR.RADIO_COLISION)) continue;
+      this._matarJugador(p);
+      return;
     }
   }
 
@@ -584,8 +684,12 @@ export class Partida {
       );
     }
 
+    // El telegrafiado va DEBAJO de todo lo demás: avisa, pero nunca tapa.
+    if (this.fase === FASE.JEFE) dibujarTelegrafiadoJefe(ctx, this.jefe, this.tiempo);
+
     this._dibujarEnemigos(ctx);
     this._dibujarObjetivosBonus(ctx);
+    this._dibujarJefe(ctx);
     this._dibujarJugador(ctx);
     this.particulas.dibujar(ctx);
     this._dibujarPuntosFlotantes(ctx);
@@ -649,6 +753,33 @@ export class Partida {
       }
       ctx.restore();
     }
+  }
+
+  _dibujarJefe(ctx) {
+    if (this.fase !== FASE.JEFE || !this.jefe.vivo) return;
+    const jefe = this.jefe;
+
+    ctx.save();
+    // Su temblor propio, que aparece cuando está malherido.
+    const tx = jefe.temblor ? (Math.random() - 0.5) * jefe.temblor * 2 : 0;
+    const ty = jefe.temblor ? (Math.random() - 0.5) * jefe.temblor * 2 : 0;
+    ctx.translate(jefe.x + tx, jefe.y + ty);
+
+    // Al perder la sustentación se inclina.
+    if (jefe.estado === ESTADO_JEFE.MURIENDO) {
+      ctx.rotate(Math.min(0.1, jefe.tiempoMuerte * 0.06));
+    }
+
+    dibujarJefe(ctx, jefe, this.tiempo, jefe.encendido ?? 1);
+
+    // Destello local al recibir un impacto.
+    if (jefe.destello > 0) {
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = (jefe.destello / 0.06) * 0.25;
+      ctx.fillStyle = COL_JUGADOR.PORCELANA_ESPECULAR;
+      ctx.fillRect(-JEFE.ANCHO / 2, -JEFE.ALTO / 2, JEFE.ANCHO, JEFE.ALTO);
+    }
+    ctx.restore();
   }
 
   _dibujarObjetivosBonus(ctx) {
@@ -803,6 +934,31 @@ export class Partida {
           alineacion: 'centro',
           alpha,
         });
+    }
+
+    // --- El jefe: su entrada es un acontecimiento ---
+    if (this.fase === FASE.JEFE && this.jefe.estado === ESTADO_JEFE.ENTRANDO) {
+      const avance = 1 - this.jefe.temporizador / JEFE.ENTRADA;
+      if (avance > 0.16) {
+        const parpadeo = Math.sin(this.tiempo * 19) > -0.3;
+        dibujarTexto(ctx, '¡ALERTA!', centro, 240, {
+          tamano: TIPOGRAFIA.TAMANOS.ENCABEZADO,
+          color: COL_PELIGRO.PROYECTIL,
+          espaciado: TIPOGRAFIA.ESPACIADOS.ENCABEZADO,
+          alineacion: 'centro',
+          alpha: parpadeo ? 1 : 0.25,
+        });
+        // Se dibuja letra a letra: el nombre se va revelando.
+        const nombre = JEFE.NOMBRE.toUpperCase();
+        const reveladas = Math.min(nombre.length, Math.floor((avance - 0.16) * nombre.length * 3));
+        dibujarTextoAjustado(ctx, nombre.slice(0, reveladas), centro, 272,
+          PANTALLA.ANCHO - 30, {
+            tamano: TIPOGRAFIA.TAMANOS.OPCION_MENU,
+            color: HUD.VALOR_DESTACADO,
+            espaciado: TIPOGRAFIA.ESPACIADOS.ETIQUETA,
+            alineacion: 'centro',
+          });
+      }
     }
 
     // --- Fase de bonificación ---

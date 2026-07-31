@@ -104,7 +104,7 @@ y abrir `http://localhost:8000`.
 - [x] **Fase 1** — Se puede jugar: mover, disparar, destruir, morir, puntuar
 - [x] **Fase 2** — Se siente como Galaga: curvas, formación que respira, picados
 - [x] **Fase 3** — Identidad: la taza, los enemigos, el fondo, el sonido, los menús
-- [ ] **Fase 4** — Ciclo completo: fase bonus y la Gran Tostadora Cósmica
+- [x] **Fase 4** — Ciclo completo: fase bonus y la Gran Tostadora Cósmica
 - [ ] **Fase 5** — Pulido: ajustes, mando, accesibilidad y equilibrado
 - [ ] **Fase 6** — Ranking mundial
 

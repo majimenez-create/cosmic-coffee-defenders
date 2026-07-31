@@ -372,6 +372,7 @@ export const JEFE = {
   PAUSA_MINIMA_ENTRE_ATAQUES: 1.2,     // sin un solo píxel magenta en pantalla:
                                        // ese silencio es lo que hace legible
                                        // el siguiente aviso
+  GRANOS_POR_SEGUNDO_Y_CARRIL: 2.4,    // densidad de la lluvia
 
   ENTRADA: 4.5,                // segundos de puesta en escena
   MUERTE: 2.2,                 // segundos de secuencia de destrucción
