@@ -58,8 +58,49 @@ export class Audio {
     this.musica.gain.value = this.volumenMusica;
     this.musica.connect(this.general);
 
+    this._crearEco();
     this._crearRuido();
     this.listo = true;
+  }
+
+  /**
+   * EL ECO — lo que hace que la música suene "a espacio".
+   *
+   * Es una repetición retardada que se va apagando. Nuestro oído interpreta
+   * los ecos como distancia, así que un sonido con eco largo se percibe como
+   * si ocurriera en un sitio enorme y vacío. Es el mismo truco que usan las
+   * bandas sonoras de ciencia ficción, y en un chiptune convierte cuatro
+   * pitidos secos en algo cósmico.
+   */
+  _crearEco() {
+    this.eco = this.ctx.createDelay(1.0);
+    this.eco.delayTime.value = 0.28;
+
+    // Cuánto del eco vuelve a entrar en el eco: es lo que hace que se repita
+    // varias veces desvaneciéndose en lugar de una sola.
+    const realimentacion = this.ctx.createGain();
+    realimentacion.gain.value = 0.34;
+
+    // Las repeticiones se van oscureciendo, como pasa de verdad cuando el
+    // sonido rebota lejos.
+    const filtro = this.ctx.createBiquadFilter();
+    filtro.type = 'lowpass';
+    filtro.frequency.value = 2600;
+
+    const mezcla = this.ctx.createGain();
+    mezcla.gain.value = 0.5;
+
+    this.eco.connect(filtro);
+    filtro.connect(realimentacion);
+    realimentacion.connect(this.eco);
+    filtro.connect(mezcla);
+    mezcla.connect(this.musica);
+
+    // Bus al que se conectan las voces que deben sonar lejanas.
+    this.musicaConEco = this.ctx.createGain();
+    this.musicaConEco.gain.value = 1;
+    this.musicaConEco.connect(this.musica);
+    this.musicaConEco.connect(this.eco);
   }
 
   /** Un búfer de ruido reutilizable: la base de explosiones y siseos de vapor. */
@@ -316,65 +357,103 @@ export class Audio {
 
   _programarPaso(paso, cuando, duracionPaso) {
     const tension = this._tension ?? 0;
+    const compas = Math.floor(paso / 16);
 
-    // --- Melodía ---
+    // --- 1. LA CAPA DE FONDO ---
+    // Un acorde larguísimo y muy suave que dura todo el compás. No se
+    // "escucha", se siente: es lo que da la sensación de estar flotando en
+    // algo inmenso. Sin esta capa la música suena a pitidos; con ella suena
+    // a espacio.
+    if (paso % 16 === 0) {
+      const acorde = ACORDES[compas];
+      for (let i = 0; i < acorde.length; i++) {
+        this._tono({
+          frecuencia: acorde[i] * 2,
+          tipo: 'sine',
+          duracion: duracionPaso * 17,
+          volumen: 0.055,
+          ataque: duracionPaso * 4,   // entra despacio, como una nebulosa
+          destino: this.musicaConEco,
+          cuando,
+        });
+      }
+    }
+
+    // --- 2. EL ARPEGIO ---
+    // Las notas del acorde recorridas muy rápido, subiendo y bajando. Es la
+    // firma sonora de los shooters espaciales: da movimiento constante y
+    // sensación de velocidad sin necesitar melodía.
+    const arpegio = _notaArpegio(compas, paso % 16);
+    if (arpegio) {
+      this._tono({
+        frecuencia: arpegio,
+        tipo: 'square',
+        duracion: duracionPaso * 0.9,
+        volumen: 0.085,
+        ataque: 0.002,
+        destino: this.musicaConEco,
+        cuando,
+      });
+    }
+
+    // --- 3. LA MELODÍA ---
+    // Pocas notas y largas, flotando por encima del arpegio. Con eco, para
+    // que cada nota se aleje y deje rastro.
     const nota = MELODIA[paso];
     if (nota) {
       this._tono({
         frecuencia: nota,
         tipo: 'square',
-        duracion: duracionPaso * 1.7,
-        // La melodía va por delante de todo: es lo que se recuerda y lo que
-        // hace que apetezca otra partida. El bajo la acompaña, no compite.
-        volumen: 0.17,
-        ataque: 0.004,
-        destino: this.musica,
+        duracion: duracionPaso * 3.4,
+        volumen: 0.15,
+        ataque: 0.008,
+        destino: this.musicaConEco,
         cuando,
       });
-      // Una segunda voz una octava arriba y muy bajita. Es el truco que hace
-      // que un tono cuadrado plano suene brillante y "de recreativa".
+      // Segunda voz una quinta arriba: engorda la melodía y suena épico.
       this._tono({
-        frecuencia: nota * 2,
-        tipo: 'square',
-        duracion: duracionPaso * 1.2,
-        volumen: 0.035,
-        destino: this.musica,
+        frecuencia: nota * 1.5,
+        tipo: 'triangle',
+        duracion: duracionPaso * 3.0,
+        volumen: 0.05,
+        destino: this.musicaConEco,
         cuando,
       });
     }
 
-    // --- Bajo ---
+    // --- 4. EL BAJO ---
+    // Grave, sostenido y seco (sin eco, para que no embarre el ritmo).
     const bajo = BAJO[paso];
     if (bajo) {
       this._tono({
         frecuencia: bajo,
-        tipo: 'triangle',
-        duracion: duracionPaso * 3.2,
-        volumen: 0.16,
+        tipo: 'sawtooth',
+        duracion: duracionPaso * 3.6,
+        volumen: 0.13,
         destino: this.musica,
         cuando,
       });
     }
 
-    // --- Percusión ---
+    // --- 5. PERCUSIÓN ---
     if (PERCUSION.bombo.includes(paso)) {
       this._tono({
-        frecuencia: 130, hasta: 44, tipo: 'sine',
-        duracion: 0.13, volumen: 0.28, destino: this.musica, cuando,
+        frecuencia: 120, hasta: 40, tipo: 'sine',
+        duracion: 0.15, volumen: 0.30, destino: this.musica, cuando,
       });
     }
     if (PERCUSION.caja.includes(paso)) {
-      this._percusionRuido(cuando, 0.11, 0.13, 1600, 'highpass');
+      this._percusionRuido(cuando, 0.12, 0.11, 1400, 'highpass', this.musica);
     }
     // El charles solo aparece cuando la cosa se pone tensa: es lo que hace
     // que el mismo tema suene más urgente sin cambiar de melodía.
     if (tension > 0.35 && paso % 2 === 1) {
-      this._percusionRuido(cuando, 0.03, 0.05, 7000, 'highpass');
+      this._percusionRuido(cuando, 0.03, 0.045, 7500, 'highpass', this.musica);
     }
   }
 
   /** Golpe de percusión: un chasquido de ruido filtrado. */
-  _percusionRuido(cuando, duracion, volumen, frecuencia, tipo) {
+  _percusionRuido(cuando, duracion, volumen, frecuencia, tipo, destino = null) {
     const fuente = this.ctx.createBufferSource();
     fuente.buffer = this._ruido;
 
@@ -388,7 +467,7 @@ export class Audio {
 
     fuente.connect(filtro);
     filtro.connect(g);
-    g.connect(this.musica);
+    g.connect(destino || this.musica);
     fuente.start(cuando);
     fuente.stop(cuando + duracion);
   }
@@ -403,37 +482,76 @@ export class Audio {
  * la melodía de abajo se pueda leer y retocar sin saber de música.
  */
 const N = {
-  E3: 164.81, F3: 174.61, G3: 196.00, A3: 220.00, B3: 246.94,
-  C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392.00,
+  A2: 110.00, E3: 164.81, F3: 174.61, G3: 196.00, Gs3: 207.65, A3: 220.00, B3: 246.94,
+  C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392.00, Gs4: 415.30,
   A4: 440.00, B4: 493.88,
-  C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, A5: 880.00,
+  C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, Gs5: 830.61, A5: 880.00,
+  C6: 1046.50, E6: 1318.51,
 };
 
 /**
- * Cuatro compases de 16 semicorcheas = 64 pasos, y vuelta a empezar.
- * Cada hueco es una semicorchea; `0` es silencio.
+ * LOS CUATRO ACORDES del tema, uno por compás.
  *
- * La melodía sube en los dos primeros compases y resuelve bajando en los dos
- * últimos. Ese "sube y baja" es lo que la hace pegadiza y lo que da ganas de
- * seguir jugando: el oído espera el remate.
+ * Está en LA MENOR ARMÓNICA, que es la menor de toda la vida pero con el sol
+ * SOSTENIDO en lugar de natural. Ese medio tono cambia todo: es lo que hace
+ * que suene misterioso y algo inquietante en lugar de simplemente triste. Es
+ * la escala de la ciencia ficción y del arcade espacial.
+ *
+ * La progresión Am · F · Dm · E es de las más épicas que existen: los tres
+ * primeros acordes van cayendo y el último tira hacia arriba, pidiendo volver
+ * al principio. Por eso da ganas de que el bucle no pare.
  */
-const MELODIA = [
-  // Compás 1 — Am: el motivo principal
-  N.E5, 0, N.E5, 0, 0, N.C5, 0, 0, N.E5, 0, N.G5, 0, N.A5, 0, 0, 0,
-  // Compás 2 — G: lo mismo un tono más abajo, para que se reconozca
-  N.D5, 0, N.D5, 0, 0, N.B4, 0, 0, N.D5, 0, N.F5, 0, N.G5, 0, 0, 0,
-  // Compás 3 — F y C: se abre, la frase respira
-  N.C5, 0, N.E5, 0, N.G5, 0, N.E5, N.C5, N.D5, 0, N.F5, 0, N.E5, 0, 0, 0,
-  // Compás 4 — Am y E: el remate, cae en escalera y deja el gancho abierto
-  N.A4, 0, N.C5, N.E5, N.A5, 0, N.G5, 0, N.F5, N.E5, N.D5, N.C5, N.B4, 0, N.E5, 0,
+const ACORDES = [
+  [N.A3, N.C4, N.E4],        // Am
+  [N.F3, N.A3, N.C4],        // F
+  [N.D4, N.F4, N.A4],        // Dm
+  [N.E3, N.Gs3, N.B3],       // E  ← el sol sostenido, el color espacial
 ];
 
-/** El bajo camina bajo la melodía: Am · G · F–C · Am–E. */
+/**
+ * El arpegio recorre el acorde del compás subiendo y bajando en 16 pasos.
+ * Se calcula en lugar de escribirse a mano: así retocar un acorde cambia el
+ * arpegio solo, y no hay 64 números que mantener sincronizados.
+ */
+function _notaArpegio(compas, pasoEnCompas) {
+  const acorde = ACORDES[compas];
+  // Tres octavas del acorde: sube seis notas y baja, con un hueco al final
+  // para que el compás respire.
+  const escalera = [
+    acorde[0], acorde[1], acorde[2], acorde[0] * 2,
+    acorde[1] * 2, acorde[2] * 2, acorde[0] * 4, acorde[2] * 2,
+    acorde[1] * 2, acorde[0] * 2, acorde[2], acorde[1],
+    acorde[0], acorde[1], acorde[2], 0,
+  ];
+  return escalera[pasoEnCompas];
+}
+
+/**
+ * LA MELODÍA. Pocas notas y largas, flotando por encima del arpegio.
+ * Cada hueco es una semicorchea; `0` es silencio.
+ *
+ * Antes tenía muchas notas seguidas y sonaba a marcha. Ahora respira: el
+ * silencio entre notas es lo que da la sensación de vacío, y con el eco cada
+ * nota se aleja dejando rastro. En el espacio, lo que se oye importa menos
+ * que lo que no se oye.
+ */
+const MELODIA = [
+  // Compás 1 — Am: la frase se abre hacia arriba
+  N.A4, 0, 0, 0, 0, 0, N.C5, 0, N.E5, 0, 0, 0, 0, 0, 0, 0,
+  // Compás 2 — F: sube más, la nota más alta del tema
+  N.F5, 0, 0, 0, 0, 0, N.E5, 0, N.A5, 0, 0, 0, 0, 0, N.G5, 0,
+  // Compás 3 — Dm: cae y se queda suspendida
+  N.F5, 0, 0, 0, N.D5, 0, 0, 0, N.A4, 0, 0, 0, N.D5, 0, 0, 0,
+  // Compás 4 — E: el sol sostenido, y el gancho que pide volver a empezar
+  N.Gs5, 0, 0, 0, N.B4, 0, 0, 0, N.E5, 0, 0, N.Gs5, N.B4, 0, N.E5, 0,
+];
+
+/** El bajo, grave y sostenido: la nota de cada acorde con su octava. */
 const BAJO = [
-  N.A3, 0, 0, 0, N.A3, 0, 0, 0, N.A3, 0, 0, 0, N.A3, 0, N.C4, 0,
-  N.G3, 0, 0, 0, N.G3, 0, 0, 0, N.G3, 0, 0, 0, N.G3, 0, N.B3, 0,
-  N.F3, 0, 0, 0, N.F3, 0, 0, 0, N.C4, 0, 0, 0, N.C4, 0, N.E4, 0,
-  N.A3, 0, 0, 0, N.A3, 0, 0, 0, N.E3, 0, 0, 0, N.E3, 0, N.G3, 0,
+  N.A2, 0, 0, 0, 0, 0, 0, 0, N.A2, 0, 0, 0, 0, 0, N.E3, 0,
+  N.F3, 0, 0, 0, 0, 0, 0, 0, N.F3, 0, 0, 0, 0, 0, N.C4, 0,
+  N.D4, 0, 0, 0, 0, 0, 0, 0, N.D4, 0, 0, 0, 0, 0, N.A3, 0,
+  N.E3, 0, 0, 0, 0, 0, 0, 0, N.E3, 0, 0, 0, 0, 0, N.Gs3, 0,
 ];
 
 const PATRON_PASOS = MELODIA.length;
