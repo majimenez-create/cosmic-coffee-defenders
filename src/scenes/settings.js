@@ -11,6 +11,8 @@
  */
 
 import { PANTALLA } from '../config/balance.js';
+// OPCIONES se usa tanto para dibujar la lista como para saber qué fila se ha
+// tocado, así que el orden de este array es el orden visual de la pantalla.
 import { HUD, JUGADOR as COL_JUGADOR, TIPOGRAFIA, FONDO } from '../config/palette.js';
 import { dibujarTexto } from '../render/text.js';
 import { OPCIONES } from '../services/settings.js';
@@ -65,6 +67,24 @@ export class PantallaAjustes {
     if (e.derechaPulsada) {
       this.ajustes.cambiar(opcion.id, 1);
       this.audio.disparo();
+    }
+
+    // En el móvil se toca la mitad izquierda o derecha de una fila para
+    // cambiar su valor, y el botón de abajo para volver. Sin esto, la pantalla
+    // de ajustes sería inalcanzable sin teclado.
+    if (e.toquePulsado && e.ultimoToque) {
+      const { x, y } = e.ultimoToque;
+      if (y > 580) {
+        this.ir('portada');
+        e.finPaso();
+        return;
+      }
+      const fila = Math.round((y - 118) / 42);
+      if (fila >= 0 && fila < OPCIONES.length) {
+        this.seleccion = fila;
+        this.ajustes.cambiar(OPCIONES[fila].id, x < PANTALLA.ANCHO / 2 ? -1 : 1);
+        this.audio.disparo();
+      }
     }
 
     if (e.pausaPulsada || e.confirmarPulsado) {
@@ -128,9 +148,30 @@ export class PantallaAjustes {
       });
     }
 
-    dibujarTexto(ctx, '↑ ↓ ELEGIR   ← → CAMBIAR   P VOLVER', centro, 600, {
-      tamano: T.ETIQUETA_HUD, color: HUD.ETIQUETA,
-      espaciado: E.ETIQUETA, alineacion: 'centro',
-    });
+    // La ayuda cambia según el dispositivo: en el móvil no hay flechas.
+    if (this.entrada.esTactil) {
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.strokeStyle = HUD.MARCO;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(centro - 70, 586, 140, 28, 4);
+      ctx.stroke();
+      ctx.restore();
+
+      dibujarTexto(ctx, 'VOLVER', centro, 600, {
+        tamano: T.ETIQUETA_HUD, color: HUD.TEXTO_PRIMARIO,
+        espaciado: E.ETIQUETA, alineacion: 'centro',
+      });
+      dibujarTexto(ctx, 'TOCA A UN LADO U OTRO PARA CAMBIAR', centro, 566, {
+        tamano: T.ETIQUETA_HUD, color: HUD.ETIQUETA,
+        espaciado: E.ETIQUETA, alineacion: 'centro', alpha: 0.8,
+      });
+    } else {
+      dibujarTexto(ctx, '↑ ↓ ELEGIR   ← → CAMBIAR   P VOLVER', centro, 600, {
+        tamano: T.ETIQUETA_HUD, color: HUD.ETIQUETA,
+        espaciado: E.ETIQUETA, alineacion: 'centro',
+      });
+    }
   }
 }

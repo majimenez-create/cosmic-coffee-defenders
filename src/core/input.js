@@ -24,7 +24,22 @@ export class Entrada {
     this.disparoPulsado = false; // solo durante un paso, hay que consumirlo
     this.pausaPulsada = false;
     this.confirmarPulsado = false;
-    this.hayTactil = false;      // se activa al primer toque real
+    this.hayTactil = false;      // se confirma al primer toque real
+
+    /**
+     * Si el dispositivo es PROBABLEMENTE táctil, sabido antes de que el
+     * jugador toque nada.
+     *
+     * Hace falta porque la portada tiene que decir "arrastra el dedo" o
+     * "pulsa la barra espaciadora" ANTES del primer gesto. Esperar al primer
+     * toque para averiguarlo significaba que quien abría el enlace en el móvil
+     * leía instrucciones de teclado.
+     *
+     * `pointer: coarse` pregunta si el puntero principal es impreciso, que es
+     * la forma correcta de preguntar "¿se maneja con el dedo?". Es mejor que
+     * mirar el nombre del navegador, que miente.
+     */
+    this.probablementeTactil = this._detectarTactil();
     this.sensibilidad = TACTIL.SENSIBILIDADES.normal;
 
     // Pila de teclas de dirección: si se pulsan las dos, gana la ÚLTIMA.
@@ -49,6 +64,21 @@ export class Entrada {
 
     this._instalarTeclado();
     this._instalarPuntero();
+  }
+
+  _detectarTactil() {
+    try {
+      const punteroBasto = window.matchMedia?.('(pointer: coarse)').matches;
+      const puntosDeContacto = (navigator.maxTouchPoints ?? 0) > 0;
+      return !!(punteroBasto && puntosDeContacto);
+    } catch {
+      return false;
+    }
+  }
+
+  /** ¿Hay que presentar el juego como táctil? */
+  get esTactil() {
+    return this.hayTactil || this.probablementeTactil;
   }
 
   _primerGesto() {
@@ -164,6 +194,12 @@ export class Entrada {
     // pointer* cubre ratón, dedo y lápiz con un solo camino de código.
     lienzo.addEventListener('pointerdown', (e) => {
       const pos = this.lienzo.aCoordenadasLogicas(e.clientX, e.clientY);
+
+      // Los menús necesitan saber DÓNDE se ha tocado, en toda la pantalla:
+      // en un móvil no hay teclas, así que los botones tienen que ser tocables.
+      this.toquePulsado = true;
+      this.ultimoToque = pos;
+
       if (pos.y < TACTIL.Y_MINIMA_CAPTURA) return;
 
       e.preventDefault();
@@ -278,6 +314,7 @@ export class Entrada {
     this.ajustesPulsado = false;
     this.recordsPulsado = false;
     this.letraPulsada = null;
+    this.toquePulsado = false;
     this.izquierdaPulsada = false;
     this.derechaPulsada = false;
     this.arribaPulsado = false;

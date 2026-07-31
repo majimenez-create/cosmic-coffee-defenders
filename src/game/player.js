@@ -107,7 +107,10 @@ export class Taza {
     // modo por defecto en móvil, donde pedir un segundo pulgar solo taparía
     // pantalla sin añadir ninguna decisión interesante.
     const modo = this.ajustes?.get('modoDisparo') ?? MODO_DISPARO.MANTENIDO;
-    const enTactil = entrada.hayTactil;
+    // El disparo automático se activa en cuanto se sabe que el dispositivo es
+    // táctil, sin esperar al primer toque: si no, el primer segundo de la
+    // primera partida en un móvil sería sin poder disparar.
+    const enTactil = entrada.esTactil;
 
     let quiereDisparar;
     if (modo === MODO_DISPARO.AUTOMATICO || enTactil) quiereDisparar = true;

@@ -24,6 +24,20 @@ const E = TIPOGRAFIA.ESPACIADOS;
 
 const VISTA = { PORTADA: 'portada', AYUDA: 'ayuda' };
 
+/**
+ * Botones tocables de la portada. En un móvil no hay teclas, así que estas
+ * opciones tienen que poder pulsarse con el dedo.
+ *
+ * La altura de 30 px lógicos equivale a unos 48 px reales en un móvil típico,
+ * que es el mínimo para que un dedo acierte sin frustrarse.
+ */
+const BOTONES = [
+  { id: 'ayuda',   x: 20,  y: 546, ancho: 150, alto: 30 },
+  { id: 'records', x: 190, y: 546, ancho: 150, alto: 30 },
+  { id: 'ajustes', x: 20,  y: 578, ancho: 150, alto: 30 },
+  { id: 'silencio', x: 190, y: 578, ancho: 150, alto: 30 },
+];
+
 export class Portada {
   /**
    * @param {import('../core/input.js').Entrada} entrada
@@ -57,9 +71,21 @@ export class Portada {
     if (this.vista === VISTA.AYUDA) {
       // Cualquier tecla o toque cierra la ayuda. Nada de buscar el botón.
       if (this.entrada.confirmarPulsado || this.entrada.pausaPulsada ||
-          this.entrada.disparoPulsado) {
+          this.entrada.disparoPulsado || this.entrada.toquePulsado) {
         this.vista = VISTA.PORTADA;
       }
+      this.entrada.finPaso();
+      return;
+    }
+
+    // Los botones tocables se atienden ANTES de arrancar la partida: si no,
+    // tocar "ajustes" empezaría a jugar.
+    const pulsado = this._botonTocado();
+    if (pulsado) {
+      if (pulsado === 'ayuda') this.vista = VISTA.AYUDA;
+      else if (pulsado === 'records') this.ir('ranking', null);
+      else if (pulsado === 'ajustes') this.ir('ajustes');
+      else if (pulsado === 'silencio') this.audio.alternarSilencio();
       this.entrada.finPaso();
       return;
     }
@@ -71,6 +97,9 @@ export class Portada {
       this.ir('ajustes');
     } else if (this.entrada.recordsPulsado) {
       this.ir('ranking', null);
+    // OJO: para EMPEZAR hace falta un toque de verdad (hayTactil), no la
+    // detección previa (esTactil). Con la detección previa, la portada
+    // arrancaba la partida sola en cuanto se abría en un móvil.
     } else if (this.entrada.confirmarPulsado || this.entrada.disparoPulsado ||
                this.entrada.hayTactil) {
       this.audio.comenzar();
@@ -148,7 +177,7 @@ export class Portada {
     // --- Llamada a empezar ---
     const visible = Math.sin(this.tiempo * 3.2) > -0.35;
     if (visible) {
-      dibujarTexto(ctx, this.entrada.hayTactil ? 'TOCA PARA EMPEZAR' : 'PULSA PARA EMPEZAR',
+      dibujarTexto(ctx, this.entrada.esTactil ? 'TOCA PARA EMPEZAR' : 'PULSA PARA EMPEZAR',
         centro, 400, {
           tamano: T.OPCION_MENU, color: COL_JUGADOR.CIAN,
           espaciado: E.ENCABEZADO, alineacion: 'centro',
@@ -160,15 +189,37 @@ export class Portada {
     // ningún tutorial estorbando después.
     this._dibujarControles(ctx, centro, 452);
 
-    // --- Ayuda ---
-    dibujarTexto(ctx, 'H · CÓMO JUGAR        R · RÉCORDS', centro, 560, {
-      tamano: T.ETIQUETA_HUD, color: HUD.ETIQUETA,
-      espaciado: E.ETIQUETA, alineacion: 'centro',
-    });
-    dibujarTexto(ctx, 'O · AJUSTES        M · SILENCIAR', centro, 578, {
-      tamano: T.ETIQUETA_HUD, color: HUD.ETIQUETA,
-      espaciado: E.ETIQUETA, alineacion: 'centro',
-    });
+    // --- Opciones ---
+    // En el móvil son botones tocables; en el ordenador, atajos de teclado.
+    // Misma posición en los dos casos, con o sin la letra delante.
+    const tactil = this.entrada.esTactil;
+    const etiquetas = {
+      ayuda: tactil ? 'CÓMO JUGAR' : 'H · CÓMO JUGAR',
+      records: tactil ? 'RÉCORDS' : 'R · RÉCORDS',
+      ajustes: tactil ? 'AJUSTES' : 'O · AJUSTES',
+      silencio: tactil
+        ? (this.audio.silenciado ? 'SONIDO OFF' : 'SONIDO ON')
+        : 'M · SILENCIAR',
+    };
+
+    for (const b of BOTONES) {
+      if (tactil) {
+        // Marco visible: en una pantalla táctil hay que ver dónde tocar.
+        ctx.save();
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = HUD.MARCO;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(b.x, b.y, b.ancho, b.alto, 4);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      dibujarTexto(ctx, etiquetas[b.id], b.x + b.ancho / 2, b.y + b.alto / 2, {
+        tamano: T.ETIQUETA_HUD, color: HUD.ETIQUETA,
+        espaciado: E.ETIQUETA, alineacion: 'centro',
+      });
+    }
 
     // Si la partida no va a contar para el ranking, se dice aquí y ahora, sin
     // esperar a que el jugador haga un récord y se lleve la decepción.
@@ -189,7 +240,7 @@ export class Portada {
 
   /** Las teclas dibujadas, o el gesto del dedo si se juega en el móvil. */
   _dibujarControles(ctx, centro, y) {
-    if (this.entrada.hayTactil) {
+    if (this.entrada.esTactil) {
       dibujarTexto(ctx, 'ARRASTRA EL DEDO PARA MOVER', centro, y, {
         tamano: T.ETIQUETA_HUD, color: HUD.CUERPO_TEXTO,
         espaciado: E.ETIQUETA, alineacion: 'centro',
@@ -211,6 +262,16 @@ export class Portada {
     dibujarTexto(ctx, 'DISPARAR', centro + 42, y + 47, {
       tamano: T.ETIQUETA_HUD, color: HUD.CUERPO_TEXTO, espaciado: E.ETIQUETA,
     });
+  }
+
+  /** ¿El último toque ha caído en algún botón? Devuelve su id, o null. */
+  _botonTocado() {
+    if (!this.entrada.toquePulsado || !this.entrada.ultimoToque) return null;
+    const { x, y } = this.entrada.ultimoToque;
+    for (const b of BOTONES) {
+      if (x >= b.x && x <= b.x + b.ancho && y >= b.y && y <= b.y + b.alto) return b.id;
+    }
+    return null;
   }
 
   _tecla(ctx, x, y, simbolo, ancho = 26) {

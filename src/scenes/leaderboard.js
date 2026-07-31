@@ -120,7 +120,8 @@ export class PantallaRanking {
     }
 
     if (this.vista === VISTA.TABLA) {
-      if (e.confirmarPulsado || e.pausaPulsada) this.ir('portada');
+      // También con el dedo: en un móvil no hay teclas con las que salir.
+      if (e.confirmarPulsado || e.pausaPulsada || e.toquePulsado) this.ir('portada');
     }
 
     e.finPaso();
