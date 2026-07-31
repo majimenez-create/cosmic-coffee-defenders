@@ -93,6 +93,12 @@ export class Entrada {
       if (TECLAS.SILENCIAR.includes(codigo)) this.silenciarPulsado = true;
       if (TECLAS.AYUDA.includes(codigo)) this.ayudaPulsada = true;
       if (TECLAS.AJUSTES.includes(codigo)) this.ajustesPulsado = true;
+      if (TECLAS.RECORDS.includes(codigo)) this.recordsPulsado = true;
+
+      // Para escribir las iniciales del ranking directamente con el teclado,
+      // en lugar de girar las ruedas letra a letra. Se lee de event.code, así
+      // que "KeyA" es la tecla física A en cualquier distribución.
+      if (/^Key[A-Z]$/.test(codigo)) this.letraPulsada = codigo.slice(3);
     });
 
     window.addEventListener('keyup', (e) => {
@@ -270,6 +276,8 @@ export class Entrada {
     this.silenciarPulsado = false;
     this.ayudaPulsada = false;
     this.ajustesPulsado = false;
+    this.recordsPulsado = false;
+    this.letraPulsada = null;
     this.izquierdaPulsada = false;
     this.derechaPulsada = false;
     this.arribaPulsado = false;

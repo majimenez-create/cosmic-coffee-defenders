@@ -5,9 +5,8 @@ universo. Oleadas infinitas, tres vidas, un impacto y mueres.
 
 **Fácil de entender en treinta segundos. Difícil de dominar en cientos de partidas.**
 
-> 🎮 **Estado: jugable, con sonido y portada.** Los enemigos entran en curvas
-> coreografiadas, forman la escuadra que respira y salen en picado a atacar.
-> Faltan la fase bonus, el jefe, los ajustes y el ranking mundial.
+> 🎮 **Estado: terminado.** Juego completo con oleadas infinitas, fase de
+> bonificación, jefe, sonido, ajustes de accesibilidad y ranking mundial.
 
 ---
 
@@ -28,6 +27,8 @@ partida empieza de cero. Todo depende de la habilidad del jugador.
 | Mover | `←` `→` o `A` `D` | Arrastra el dedo | Cruceta o stick |
 | Disparar | `Espacio` (mantenido) | Automático | Botón principal |
 | Pausa | `P` | Botón de pausa | Start |
+
+Y en la portada: `H` cómo jugar · `O` ajustes · `R` récords · `M` silenciar.
 
 ---
 
@@ -106,7 +107,7 @@ y abrir `http://localhost:8000`.
 - [x] **Fase 3** — Identidad: la taza, los enemigos, el fondo, el sonido, los menús
 - [x] **Fase 4** — Ciclo completo: fase bonus y la Gran Tostadora Cósmica
 - [x] **Fase 5** — Pulido: ajustes, mando, accesibilidad y equilibrado
-- [ ] **Fase 6** — Ranking mundial
+- [x] **Fase 6** — Ranking mundial
 
 ### Cuándo estará terminado
 

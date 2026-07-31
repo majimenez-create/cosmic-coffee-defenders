@@ -76,6 +76,36 @@ para el ranking mundial**.
 
 ---
 
+## El ranking mundial
+
+Vive en Supabase, en la tabla `puntuaciones` del proyecto
+`cilwiwbjljlzajniddmk`. Se habla con ella mediante peticiones de red normales,
+sin ninguna librería.
+
+**La clave que aparece en `src/services/leaderboard.js` es pública por diseño**,
+no es un descuido: en Supabase la clave publicable está pensada para viajar en el
+navegador. Lo que protege los datos son las reglas de la propia base de datos:
+
+- Cualquiera puede **leer** el ranking. Es su razón de existir.
+- Cualquiera puede **añadir** su puntuación, pero solo si es **plausible para la
+  fase alcanzada** (tope de 25.000 puntos por fase más un colchón).
+- **Nadie puede modificar ni borrar nada.** Al no existir política de UPDATE ni
+  de DELETE con RLS activado, esas operaciones están prohibidas para todos.
+- Las iniciales tienen que ser tres caracteres de A a Z o espacio, y los puntos
+  y la fase, valores en rango.
+
+**Esto NO es un sistema antitrampas, y se asume conscientemente.** Quien quiera
+falsear una puntuación puede enviar también una fase alta. Lo que se consigue es
+que la basura evidente no entre y que el ranking siga siendo creíble. Evitarlo
+de verdad exigiría validar la partida entera en un servidor, lo que está fuera
+de proporción para este proyecto.
+
+**El juego funciona sin red.** Si no hay conexión, se sigue jugando igual, el
+récord local se guarda como siempre y el envío queda en una cola que se
+reintenta al volver la conexión. El ranking es un añadido, nunca un requisito.
+
+---
+
 ## Reglas técnicas innegociables
 
 1. **Ningún número mágico fuera de `src/config/`.** Si aparece un `0.85` suelto

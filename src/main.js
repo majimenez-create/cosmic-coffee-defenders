@@ -17,7 +17,9 @@ import { Resplandor } from './render/glow.js';
 import { Portada } from './scenes/title.js';
 import { Partida } from './scenes/play.js';
 import { PantallaAjustes } from './scenes/settings.js';
+import { PantallaRanking } from './scenes/leaderboard.js';
 import { Ajustes } from './services/settings.js';
+import { reintentarPendientes } from './services/leaderboard.js';
 import {
   JUGADOR as COL_JUGADOR, DISPARO_JUGADOR, PELIGRO, ENEMIGOS,
 } from './config/palette.js';
@@ -55,6 +57,11 @@ const escenas = new GestorEscenas();
 escenas.registrar('portada', new Portada(entrada, audio, fondo, resplandor, ajustes));
 escenas.registrar('partida', new Partida(entrada, audio, fondo, resplandor, ajustes));
 escenas.registrar('ajustes', new PantallaAjustes(entrada, audio, fondo, ajustes));
+escenas.registrar('ranking', new PantallaRanking(entrada, audio, fondo));
+
+// Al volver la conexión se reintenta lo que quedó pendiente de enviar: una
+// mala cobertura no debe costarle a nadie su puesto en el ranking.
+window.addEventListener('online', () => reintentarPendientes());
 
 // El navegador prohíbe hacer sonar nada hasta que el jugador toca algo. En
 // lugar de intentarlo y provocar un error en la consola, el motor de audio se

@@ -40,6 +40,7 @@ import {
 import { dibujarHud } from '../render/hud.js';
 import { dibujarTexto, dibujarTextoAjustado } from '../render/text.js';
 import { leerRecord, guardarRecord } from '../services/scoreStore.js';
+import { entraEnRanking } from '../services/leaderboard.js';
 
 const FASE = {
   INTRO: 'intro',
@@ -290,6 +291,17 @@ export class Partida {
           this.ir('portada');
           return;
         }
+        // Si la puntuación entra en el ranking, se va a pedir las iniciales en
+        // lugar de reintentar. Solo cuando de verdad entra: hacer escribir a
+        // alguien que no va a salir en la tabla es una pérdida de tiempo.
+        if (this.temporizador <= 0 && this.entraEnRanking && !this.rankingPedido) {
+          this.rankingPedido = true;
+          this.entrada.finPaso();
+          this.ir('ranking', {
+            puntos: this.puntos, fase: this.numeroFase, entra: true,
+          });
+          return;
+        }
         // El bloqueo inicial existe para que quien esté machacando el disparo
         // no se salte su propia puntuación sin verla. Pasado ese margen, la
         // pulsación se atiende aunque se hubiera hecho antes: nunca se come
@@ -428,6 +440,20 @@ export class Partida {
       );
       if (salio) this.audio.disparoEnemigo();
     }
+  }
+
+  /**
+   * ¿La puntuación entra en el top 10 mundial? Se consulta en cuanto acaba la
+   * partida, en paralelo, para que al pulsar no haya que esperar a la red.
+   *
+   * Si no hay conexión no se pide nada: se prefiere no molestar antes que
+   * hacer escribir unas iniciales que no van a poder enviarse.
+   */
+  async _consultarRanking() {
+    this.entraEnRanking = false;
+    if (!this.ajustes.puntuaValida || this.puntos <= 0) return;
+    const entra = await entraEnRanking(this.puntos);
+    this.entraEnRanking = entra === true;
   }
 
   /** El enfrentamiento con la Gran Tostadora Cósmica. */
@@ -615,11 +641,15 @@ export class Partida {
       this.fase = FASE.FIN_PARTIDA;
       this.temporizador = TIEMPOS.BLOQUEO_FIN_PARTIDA;
       this.confirmacionPendiente = false;
+      this.rankingPedido = false;
       this.audio.pararMusica();
       setTimeout(() => this.audio.finPartida(), 700);
       if (this.puntos > this.recordAlEmpezar) {
         setTimeout(() => this.audio.nuevoRecord(), 1600);
       }
+      // Se pregunta al ranking mientras el jugador ve su puntuación, para que
+      // el paso a las iniciales sea inmediato y no haya que esperar a la red.
+      this._consultarRanking();
     }
   }
 

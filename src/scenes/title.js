@@ -69,6 +69,8 @@ export class Portada {
       this.vista = VISTA.AYUDA;
     } else if (this.entrada.ajustesPulsado) {
       this.ir('ajustes');
+    } else if (this.entrada.recordsPulsado) {
+      this.ir('ranking', null);
     } else if (this.entrada.confirmarPulsado || this.entrada.disparoPulsado ||
                this.entrada.hayTactil) {
       this.audio.comenzar();
@@ -159,7 +161,7 @@ export class Portada {
     this._dibujarControles(ctx, centro, 452);
 
     // --- Ayuda ---
-    dibujarTexto(ctx, 'H · CÓMO JUGAR', centro, 560, {
+    dibujarTexto(ctx, 'H · CÓMO JUGAR        R · RÉCORDS', centro, 560, {
       tamano: T.ETIQUETA_HUD, color: HUD.ETIQUETA,
       espaciado: E.ETIQUETA, alineacion: 'centro',
     });

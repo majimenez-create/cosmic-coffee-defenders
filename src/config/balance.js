@@ -515,6 +515,7 @@ export const TECLAS = {
   CONFIRMAR: ['Enter', 'Space'],
   AYUDA: ['KeyH'],
   AJUSTES: ['KeyO'],
+  RECORDS: ['KeyR'],
   // Solo para navegar menús: la taza nunca sube ni baja.
   ARRIBA: ['ArrowUp', 'KeyW'],
   ABAJO: ['ArrowDown', 'KeyS'],
