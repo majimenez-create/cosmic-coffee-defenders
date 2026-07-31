@@ -39,8 +39,22 @@ export class Entrada {
     this._anclaDedo = 0;
     this._anclaTaza = 0;
 
+    /**
+     * Se llama UNA vez, en la primera tecla o el primer toque de verdad.
+     * Los navegadores prohíben hacer sonar nada antes de eso, así que es el
+     * momento exacto en el que se puede encender el audio.
+     */
+    this.alPrimerGesto = null;
+    this._huboGesto = false;
+
     this._instalarTeclado();
     this._instalarPuntero();
+  }
+
+  _primerGesto() {
+    if (this._huboGesto) return;
+    this._huboGesto = true;
+    this.alPrimerGesto?.();
   }
 
   // -------------------------------------------------------------------------
@@ -55,6 +69,7 @@ export class Entrada {
       if (this._esDeJuego(codigo)) e.preventDefault();
       if (e.repeat) return;
 
+      this._primerGesto();
       this._teclas.add(codigo);
 
       if (TECLAS.IZQUIERDA.includes(codigo)) this._empujarDireccion(-1);
@@ -65,6 +80,7 @@ export class Entrada {
       }
       if (TECLAS.PAUSA.includes(codigo)) this.pausaPulsada = true;
       if (TECLAS.CONFIRMAR.includes(codigo)) this.confirmarPulsado = true;
+      if (TECLAS.SILENCIAR.includes(codigo)) this.silenciarPulsado = true;
     });
 
     window.addEventListener('keyup', (e) => {
@@ -133,6 +149,7 @@ export class Entrada {
       if (pos.y < TACTIL.Y_MINIMA_CAPTURA) return;
 
       e.preventDefault();
+      this._primerGesto();
       this.hayTactil = true;
 
       if (this._toqueId === null) {
@@ -237,6 +254,7 @@ export class Entrada {
     this.disparoPulsado = false;
     this.pausaPulsada = false;
     this.confirmarPulsado = false;
+    this.silenciarPulsado = false;
   }
 
   limpiar() {

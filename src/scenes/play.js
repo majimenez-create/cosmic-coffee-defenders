@@ -11,7 +11,7 @@
 
 import {
   PANTALLA, DISPARO, DISPARO_ENEMIGO, ATAQUES, PUNTUACION, PROGRESION,
-  CICLO_FASES, JUGADOR as CFG_JUGADOR, EFECTOS, TIEMPOS, CARTELES,
+  CICLO_FASES, JUGADOR as CFG_JUGADOR, EFECTOS, TIEMPOS, CARTELES, FORMACION,
 } from '../config/balance.js';
 import {
   HUD, FONDO, JUGADOR as COL_JUGADOR, ENEMIGOS as COL_ENEMIGOS, TIPOGRAFIA,
@@ -58,8 +58,13 @@ const DIBUJOS = {
 const TIPOS_DIBUJABLES = Object.keys(DIBUJOS);
 
 export class Partida {
-  constructor(entrada) {
+  /**
+   * @param {import('../core/input.js').Entrada} entrada
+   * @param {import('../core/audio.js').Audio} audio
+   */
+  constructor(entrada, audio) {
     this.entrada = entrada;
+    this.audio = audio;
 
     this.estrellas = new CampoDeEstrellas();
     this.particulas = new Particulas();
@@ -102,7 +107,9 @@ export class Partida {
     // récord se actualiza en cuanto se supera, al final siempre parecería que
     // has hecho récord aunque hayas quedado muy por debajo.
     this.recordAlEmpezar = this.record;
+    this.recordAvisado = false;
 
+    this.audio.arrancarMusica();
     this._entrarEnFase();
   }
 
@@ -162,12 +169,14 @@ export class Partida {
     this.temporizadorAntesDePausar = this.temporizador;
     this.fase = FASE.PAUSA;
     this.entrada.limpiar();
+    this.audio.pausar();
   }
 
   /** Nunca se vuelve de golpe: primero la cuenta atrás 3 · 2 · 1. */
   reanudar() {
     this.fase = FASE.REANUDANDO;
     this.cuentaAtras = TIEMPOS.CUENTA_ATRAS_PAUSA * 3;
+    this.audio.reanudar();
   }
 
   // -------------------------------------------------------------------------
@@ -188,6 +197,13 @@ export class Partida {
   actualizar(dt) {
     this.tiempo += dt;
     this.entrada.actualizar();
+
+    // Silenciar está disponible en cualquier momento, incluso en pausa.
+    if (this.entrada.silenciarPulsado) {
+      this.silenciado = this.audio.alternarSilencio();
+      this.avisoSilencio = TIEMPOS.AVISO_SILENCIO;
+    }
+    if (this.avisoSilencio > 0) this.avisoSilencio -= dt;
 
     this.estrellas.actualizar(dt);
     this.particulas.actualizar(dt);
@@ -256,9 +272,25 @@ export class Partida {
     }
 
     this.formacion.actualizar(dt);
+
+    const disparosAntes = this.taza.disparosRealizados;
+    const invulnerableAntes = this.taza.invulnerable;
     this.taza.actualizar(dt, this.entrada, this.tiempo);
+    if (this.taza.disparosRealizados > disparosAntes) this.audio.disparo();
+    // Al acabarse la invulnerabilidad suena un aviso: nunca se vuelve a ser
+    // mortal en silencio.
+    if (invulnerableAntes > 0 && this.taza.invulnerable <= 0) {
+      this.audio.finInvulnerabilidad();
+    }
+
     this.disparosJugador.actualizar(dt);
     this.disparosEnemigos.actualizar(dt);
+
+    // El zumbido de la escuadra aprieta conforme quedan menos enemigos: el
+    // propio ritmo te dice cuánto te falta sin mirar la pantalla.
+    const vivos = this.formacion.vivos.length;
+    const tension = 1 - vivos / FORMACION.TOTAL;
+    this.audio.actualizarMusica(dt, Math.max(0, Math.min(1, tension)));
 
     if (this.fase === FASE.COMBATE) this._ordenarAtaques(dt);
     this._dispararDesdePicados();
@@ -267,6 +299,7 @@ export class Partida {
     if (this.fase === FASE.COMBATE && !this.formacion.quedanVivos) {
       this.fase = FASE.OLEADA_LIMPIADA;
       this.temporizador = TIEMPOS.FIN_OLEADA;
+      this.audio.oleadaDespejada();
     }
 
     this.entrada.finPaso();
@@ -282,7 +315,12 @@ export class Partida {
     this.recargaAtaque -= dt;
     if (this.recargaAtaque > 0) return;
 
-    const salidos = this.formacion.lanzarAtaque(ATAQUES.ATACANTES_POR_TANDA, this.taza.x);
+    const salidos = this.formacion.lanzarAtaque(
+      ATAQUES.ATACANTES_POR_TANDA, this.taza.x,
+      // Cada tipo avisa con un sonido distinto: un jugador experto tiene que
+      // poder esquivar de oído sin mirar arriba.
+      (tipo) => this.audio.aviso(tipo)
+    );
 
     let espera = ATAQUES.INTERVALO_BASE / this.multiplicadorFrecuencia;
     if (this._esFaseFacil()) espera /= PROGRESION.MULTIPLICADOR_FASES_FACILES;
@@ -294,11 +332,12 @@ export class Partida {
   /** Los enemigos en picado sueltan su disparo a mitad del recorrido. */
   _dispararDesdePicados() {
     for (const e of this.formacion.tiradoresEnPicado()) {
-      this.disparosEnemigos.lanzar(
+      const salio = this.disparosEnemigos.lanzar(
         e.x,
         e.y + DISPARO_ENEMIGO.DESPLAZAMIENTO_ORIGEN,
         DISPARO_ENEMIGO.VELOCIDAD * this.multiplicadorVelocidad
       );
+      if (salio) this.audio.disparoEnemigo();
     }
   }
 
@@ -320,16 +359,20 @@ export class Partida {
           const puntos = e.def.puntos * (enPicado ? PUNTUACION.MULTIPLICADOR_EN_PICADO : 1);
           this._sumarPuntos(puntos);
           if (enPicado) this._mostrarPuntos(e.x, e.y, puntos);
+
+          const categoria = e.def.categoriaImpacto;
+          if (categoria === 'enemigoGrande') this.audio.explosionGrande();
+          else this.audio.explosionPequena();
           this.particulas.explosionEnemigo(
             e.x, e.y, e.def.particulasExplosion, COL_ENEMIGOS[e.tipo].cuerpo
           );
           // Cada categoría tiene su propio peso: matar a la unidad de 400
           // puntos no puede sentirse igual que matar a la de 100.
-          const categoria = e.def.categoriaImpacto;
           this._sacudir(EFECTOS.SACUDIDA[categoria]);
           this.congelacion = EFECTOS.HITSTOP_MS[categoria];
         } else {
           this.particulas.impacto(p.x, p.y);
+          this.audio.impacto();
         }
         break;
       }
@@ -360,6 +403,7 @@ export class Partida {
    */
   _matarJugador(culpable) {
     this.particulas.explosionJugador(this.taza.x, this.taza.y);
+    this.audio.muerteJugador();
     this._sacudir(EFECTOS.SACUDIDA.jugador);
     this.congelacion = EFECTOS.HITSTOP_MS.jugador;
 
@@ -374,6 +418,11 @@ export class Partida {
       this.fase = FASE.FIN_PARTIDA;
       this.temporizador = TIEMPOS.BLOQUEO_FIN_PARTIDA;
       this.confirmacionPendiente = false;
+      this.audio.pararMusica();
+      setTimeout(() => this.audio.finPartida(), 700);
+      if (this.puntos > this.recordAlEmpezar) {
+        setTimeout(() => this.audio.nuevoRecord(), 1600);
+      }
     }
   }
 
@@ -401,7 +450,12 @@ export class Partida {
     }
     if (this.puntos >= this.siguienteVidaExtra) {
       this.siguienteVidaExtra += PUNTUACION.VIDA_EXTRA_CADA;
-      this.taza.ganarVida();
+      if (this.taza.ganarVida()) this.audio.vidaExtra();
+    }
+    // El récord se celebra en el momento de superarlo, una sola vez.
+    if (!this.recordAvisado && this.puntos > this.recordAlEmpezar && this.recordAlEmpezar > 0) {
+      this.recordAvisado = true;
+      this.audio.nuevoRecord();
     }
   }
 
@@ -584,6 +638,17 @@ export class Partida {
 
   _dibujarCarteles(ctx) {
     const centro = PANTALLA.ANCHO / 2;
+
+    if (this.avisoSilencio > 0) {
+      dibujarTexto(ctx, this.silenciado ? 'SONIDO OFF' : 'SONIDO ON',
+        centro, CARTELES.Y_AVISO_SILENCIO, {
+          tamano: TIPOGRAFIA.TAMANOS.ETIQUETA_HUD,
+          color: HUD.ETIQUETA,
+          espaciado: TIPOGRAFIA.ESPACIADOS.ETIQUETA,
+          alineacion: 'centro',
+          alpha: Math.min(1, this.avisoSilencio * 3),
+        });
+    }
 
     if (this.fase === FASE.INTRO) {
       const entrada = (TIEMPOS.INTRO_FASE - this.temporizador) * 4;

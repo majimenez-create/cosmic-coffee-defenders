@@ -2,21 +2,28 @@
  * MAIN — El arranque del juego.
  * =============================
  *
- * Crea el lienzo, los controles y la partida, y los conecta al reloj.
- * Nada más: toda la lógica vive en sus propios archivos.
- *
- * FASE 1: ya se puede jugar. La escuadra está colocada y dispara, pero
- * todavía no hace las entradas en curva ni los picados. Eso es la fase 2.
+ * Crea el lienzo, los controles, el audio y la partida, y los conecta al
+ * reloj. Nada más: toda la lógica vive en sus propios archivos.
  */
 
 import { Lienzo } from './core/canvas.js';
 import { Bucle } from './core/loop.js';
 import { Entrada } from './core/input.js';
+import { Audio } from './core/audio.js';
 import { Partida } from './scenes/play.js';
 
 const lienzo = new Lienzo(document.getElementById('juego'));
 const entrada = new Entrada(lienzo);
-const partida = new Partida(entrada);
+const audio = new Audio();
+const partida = new Partida(entrada, audio);
+
+// El navegador prohíbe hacer sonar nada hasta que el jugador toca algo. En
+// lugar de intentarlo y provocar un error en la consola, el motor de audio se
+// enciende exactamente en el primer gesto.
+entrada.alPrimerGesto = () => {
+  audio.despertar();
+  audio.arrancarMusica();
+};
 
 const bucle = new Bucle(
   (dt) => {
@@ -45,5 +52,5 @@ lienzo.canvas.focus();
 // Acceso al estado del juego para poder comprobarlo durante el desarrollo.
 // Solo se activa al ejecutar en local: en la web publicada no existe.
 if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-  window.__juego = { lienzo, entrada, partida, bucle };
+  window.__juego = { lienzo, entrada, audio, partida, bucle };
 }

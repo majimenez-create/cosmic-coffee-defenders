@@ -148,7 +148,7 @@ export class Formacion {
    *     leerían por separado.
    *   - Nunca sale un enemigo que esté justo encima del jugador.
    */
-  lanzarAtaque(cuantos, jugadorX) {
+  lanzarAtaque(cuantos, jugadorX, alAvisar = null) {
     if (!this.entradaCompletada) return 0;
 
     const hueco = ATAQUES.MAXIMO_SIMULTANEOS - this.atacantes;
@@ -179,6 +179,7 @@ export class Formacion {
       const camino = this.caminos.variante(nombre, espejo);
 
       elegido.avisar(telegrafiado + i * ATAQUES.ESCALON_ENTRE_AVISOS, camino);
+      alAvisar?.(elegido.tipo);
       salidos++;
     }
 

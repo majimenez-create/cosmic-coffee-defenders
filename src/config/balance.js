@@ -407,6 +407,7 @@ export const TIEMPOS = {
   CUENTA_ATRAS_PAUSA: 0.6,     // por cada número del 3 · 2 · 1
   DESTELLO_IMPACTO: 0.08,      // el parpadeo blanco del enemigo golpeado
   PUNTOS_FLOTANTES: 0.6,       // lo que dura el "+200" al abatir en picado
+  AVISO_SILENCIO: 0.9,         // el cartel de SONIDO OFF / SONIDO ON
 };
 
 /** Posición vertical de cada cartel, para que no bailen entre pantallas. */
@@ -415,6 +416,7 @@ export const CARTELES = {
   Y_PRINCIPAL: 300,
   Y_SECUNDARIO: 316,
   Y_LLAMADA: 380,
+  Y_AVISO_SILENCIO: 56,        // justo bajo el HUD, fuera de la zona de juego
   // Si una amenaza se acerca más que esto a un cartel, el cartel se atenúa.
   // Ningún texto puede participar en la muerte del jugador.
   DISTANCIA_ATENUACION: 80,
