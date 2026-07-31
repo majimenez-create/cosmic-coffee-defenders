@@ -73,6 +73,10 @@ export class Audio {
 
   reanudar() {
     if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+    // Se resincroniza el compás. Si no, al volver de una pausa larga el
+    // programador intentaría recuperar todos los pasos perdidos de golpe y
+    // sonarían encimados.
+    if (this.ctx) this._instanteProximoPaso = this.ctx.currentTime + 0.08;
   }
 
   pausar() {
@@ -96,10 +100,14 @@ export class Audio {
   /**
    * Un tono con envolvente. La envolvente (subida rápida, bajada suave) es lo
    * que convierte un pitido plano en algo que suena a instrumento.
+   *
+   * @param {number} [cuando]  instante exacto en que debe sonar. Para la
+   *   música es imprescindible: si se programara "ahora" en cada fotograma,
+   *   el ritmo cojearía porque los fotogramas no caen en tiempos exactos.
    */
-  _tono({ frecuencia, hasta = null, tipo = 'square', duracion = 0.1, volumen = 0.3, ataque = 0.005, destino = null }) {
+  _tono({ frecuencia, hasta = null, tipo = 'square', duracion = 0.1, volumen = 0.3, ataque = 0.005, destino = null, cuando = null }) {
     if (!this.listo) return;
-    const t = this.ctx.currentTime;
+    const t = cuando ?? this.ctx.currentTime;
 
     const osc = this.ctx.createOscillator();
     osc.type = tipo;
@@ -250,19 +258,28 @@ export class Audio {
   }
 
   // -------------------------------------------------------------------------
-  // Música: el zumbido de la escuadra
+  // MÚSICA
   // -------------------------------------------------------------------------
 
   /**
-   * No es una melodía: es un latido de bajo que sigue el pulso de la
-   * formación, como el zumbido amenazante del Galaga original. Sube de tono
-   * conforme quedan menos enemigos, así que el propio ritmo del juego te dice
-   * cuánto te queda sin mirar la pantalla.
+   * Un tema de recreativa de verdad: melodía pegadiza, bajo que camina y
+   * percusión. Tres voces sonando a la vez, como una máquina de los ochenta.
+   *
+   * Está en LA MENOR, que es la escala del arcade clásico: suena épica y algo
+   * melancólica sin sonar triste.
+   *
+   * CÓMO SE MIDE EL TIEMPO
+   * Las notas NO se lanzan "cuando toca el fotograma": se programan por
+   * adelantado en el reloj del propio motor de audio, unas décimas antes de
+   * sonar. Si dependieran de los fotogramas, el ritmo cojearía, porque los
+   * fotogramas no caen en instantes musicalmente exactos. Esto es lo que
+   * separa una música que suena bien de una que suena mal.
    */
   arrancarMusica() {
+    if (this._musicaActiva) return;
     this._musicaActiva = true;
-    this._pasoMusica = 0;
-    this._proximoPaso = 0;
+    this._paso = 0;
+    this._instanteProximoPaso = this.listo ? this.ctx.currentTime + 0.1 : 0;
   }
 
   pararMusica() {
@@ -270,35 +287,159 @@ export class Audio {
   }
 
   /**
-   * @param {number} tensión  0 = escuadra completa · 1 = quedan poquísimos
+   * @param {number} tension  0 = escuadra completa · 1 = quedan poquísimos
    */
   actualizarMusica(dt, tension = 0) {
     if (!this.listo || !this._musicaActiva) return;
+    this._tension = tension;
 
-    this._proximoPaso -= dt;
-    if (this._proximoPaso > 0) return;
+    // Arranque perezoso: si la música se pidió antes de que existiera el
+    // motor de audio, se engancha aquí.
+    if (!this._instanteProximoPaso) this._instanteProximoPaso = this.ctx.currentTime + 0.1;
 
-    // El compás se acelera con la tensión: de 0,50 s a 0,26 s por golpe.
-    const intervalo = 0.50 - tension * 0.24;
-    this._proximoPaso = intervalo;
+    // El tempo sube con la tensión: de 132 a 168 pulsaciones por minuto.
+    // Cuanto menos queda de la escuadra, más aprieta la música.
+    const bpm = 132 + tension * 36;
+    const duracionPaso = 60 / bpm / 4;   // un paso = una semicorchea
 
-    // Cuatro notas graves que suben medio tono conforme aprieta la cosa.
-    const base = 55 * (1 + tension * 0.5);
-    const patron = [1, 1.5, 1.25, 1.5];
-    const nota = base * patron[this._pasoMusica % patron.length];
-    this._pasoMusica++;
-
-    this._tono({
-      frecuencia: nota, hasta: nota * 0.75, tipo: 'triangle',
-      duracion: intervalo * 0.7, volumen: 0.20, destino: this.musica,
-    });
-
-    // Cada cuatro golpes, un armónico agudo que da el aire "espacial".
-    if (this._pasoMusica % 4 === 0) {
-      this._tono({
-        frecuencia: nota * 6, tipo: 'sine',
-        duracion: 0.10, volumen: 0.05, destino: this.musica,
-      });
+    // Se programan por adelantado todos los pasos que caigan en la próxima
+    // décima de segundo.
+    const horizonte = this.ctx.currentTime + 0.12;
+    let vueltas = 0;
+    while (this._instanteProximoPaso < horizonte && vueltas < 32) {
+      this._programarPaso(this._paso, this._instanteProximoPaso, duracionPaso);
+      this._paso = (this._paso + 1) % PATRON_PASOS;
+      this._instanteProximoPaso += duracionPaso;
+      vueltas++;
     }
   }
+
+  _programarPaso(paso, cuando, duracionPaso) {
+    const tension = this._tension ?? 0;
+
+    // --- Melodía ---
+    const nota = MELODIA[paso];
+    if (nota) {
+      this._tono({
+        frecuencia: nota,
+        tipo: 'square',
+        duracion: duracionPaso * 1.7,
+        // La melodía va por delante de todo: es lo que se recuerda y lo que
+        // hace que apetezca otra partida. El bajo la acompaña, no compite.
+        volumen: 0.17,
+        ataque: 0.004,
+        destino: this.musica,
+        cuando,
+      });
+      // Una segunda voz una octava arriba y muy bajita. Es el truco que hace
+      // que un tono cuadrado plano suene brillante y "de recreativa".
+      this._tono({
+        frecuencia: nota * 2,
+        tipo: 'square',
+        duracion: duracionPaso * 1.2,
+        volumen: 0.035,
+        destino: this.musica,
+        cuando,
+      });
+    }
+
+    // --- Bajo ---
+    const bajo = BAJO[paso];
+    if (bajo) {
+      this._tono({
+        frecuencia: bajo,
+        tipo: 'triangle',
+        duracion: duracionPaso * 3.2,
+        volumen: 0.16,
+        destino: this.musica,
+        cuando,
+      });
+    }
+
+    // --- Percusión ---
+    if (PERCUSION.bombo.includes(paso)) {
+      this._tono({
+        frecuencia: 130, hasta: 44, tipo: 'sine',
+        duracion: 0.13, volumen: 0.28, destino: this.musica, cuando,
+      });
+    }
+    if (PERCUSION.caja.includes(paso)) {
+      this._percusionRuido(cuando, 0.11, 0.13, 1600, 'highpass');
+    }
+    // El charles solo aparece cuando la cosa se pone tensa: es lo que hace
+    // que el mismo tema suene más urgente sin cambiar de melodía.
+    if (tension > 0.35 && paso % 2 === 1) {
+      this._percusionRuido(cuando, 0.03, 0.05, 7000, 'highpass');
+    }
+  }
+
+  /** Golpe de percusión: un chasquido de ruido filtrado. */
+  _percusionRuido(cuando, duracion, volumen, frecuencia, tipo) {
+    const fuente = this.ctx.createBufferSource();
+    fuente.buffer = this._ruido;
+
+    const filtro = this.ctx.createBiquadFilter();
+    filtro.type = tipo;
+    filtro.frequency.value = frecuencia;
+
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(volumen, cuando);
+    g.gain.exponentialRampToValueAtTime(0.0001, cuando + duracion);
+
+    fuente.connect(filtro);
+    filtro.connect(g);
+    g.connect(this.musica);
+    fuente.start(cuando);
+    fuente.stop(cuando + duracion);
+  }
 }
+
+// ---------------------------------------------------------------------------
+// EL TEMA
+// ---------------------------------------------------------------------------
+
+/**
+ * Frecuencias de las notas que se usan. Se escriben así, con nombre, para que
+ * la melodía de abajo se pueda leer y retocar sin saber de música.
+ */
+const N = {
+  E3: 164.81, F3: 174.61, G3: 196.00, A3: 220.00, B3: 246.94,
+  C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392.00,
+  A4: 440.00, B4: 493.88,
+  C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, A5: 880.00,
+};
+
+/**
+ * Cuatro compases de 16 semicorcheas = 64 pasos, y vuelta a empezar.
+ * Cada hueco es una semicorchea; `0` es silencio.
+ *
+ * La melodía sube en los dos primeros compases y resuelve bajando en los dos
+ * últimos. Ese "sube y baja" es lo que la hace pegadiza y lo que da ganas de
+ * seguir jugando: el oído espera el remate.
+ */
+const MELODIA = [
+  // Compás 1 — Am: el motivo principal
+  N.E5, 0, N.E5, 0, 0, N.C5, 0, 0, N.E5, 0, N.G5, 0, N.A5, 0, 0, 0,
+  // Compás 2 — G: lo mismo un tono más abajo, para que se reconozca
+  N.D5, 0, N.D5, 0, 0, N.B4, 0, 0, N.D5, 0, N.F5, 0, N.G5, 0, 0, 0,
+  // Compás 3 — F y C: se abre, la frase respira
+  N.C5, 0, N.E5, 0, N.G5, 0, N.E5, N.C5, N.D5, 0, N.F5, 0, N.E5, 0, 0, 0,
+  // Compás 4 — Am y E: el remate, cae en escalera y deja el gancho abierto
+  N.A4, 0, N.C5, N.E5, N.A5, 0, N.G5, 0, N.F5, N.E5, N.D5, N.C5, N.B4, 0, N.E5, 0,
+];
+
+/** El bajo camina bajo la melodía: Am · G · F–C · Am–E. */
+const BAJO = [
+  N.A3, 0, 0, 0, N.A3, 0, 0, 0, N.A3, 0, 0, 0, N.A3, 0, N.C4, 0,
+  N.G3, 0, 0, 0, N.G3, 0, 0, 0, N.G3, 0, 0, 0, N.G3, 0, N.B3, 0,
+  N.F3, 0, 0, 0, N.F3, 0, 0, 0, N.C4, 0, 0, 0, N.C4, 0, N.E4, 0,
+  N.A3, 0, 0, 0, N.A3, 0, 0, 0, N.E3, 0, 0, 0, N.E3, 0, N.G3, 0,
+];
+
+const PATRON_PASOS = MELODIA.length;
+
+/** Bombo en los tiempos fuertes, caja en los débiles. Lo de siempre, y funciona. */
+const PERCUSION = {
+  bombo: [0, 8, 16, 24, 32, 40, 48, 56, 62],
+  caja: [4, 12, 20, 28, 36, 44, 52, 60],
+};

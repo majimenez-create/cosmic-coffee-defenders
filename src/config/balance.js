@@ -466,7 +466,8 @@ export const EFECTOS = {
 
 export const AJUSTES_POR_DEFECTO = {
   volumenGeneral: 80,
-  volumenMusica: 50,           // arrancar a todo volumen hace que la gente cierre
+  volumenMusica: 62,           // suficiente para que la melodía enganche, sin
+                               // tapar los avisos de ataque, que salvan vidas
   volumenEfectos: 80,
   sacudidaPantalla: true,      // [BIBLIA] activable/desactivable
   reducirDestellos: false,
