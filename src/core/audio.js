@@ -74,21 +74,25 @@ export class Audio {
    */
   _crearEco() {
     this.eco = this.ctx.createDelay(1.0);
-    this.eco.delayTime.value = 0.28;
+    // Eco CORTO. Uno largo suena espectacular en una nota sola, pero sobre
+    // notas rápidas cada una se solapa con el eco de las anteriores y todo se
+    // convierte en un barullo. Por eso el eco se reserva a la melodía, que va
+    // despacio, y se mantiene breve.
+    this.eco.delayTime.value = 0.16;
 
-    // Cuánto del eco vuelve a entrar en el eco: es lo que hace que se repita
-    // varias veces desvaneciéndose en lugar de una sola.
+    // Cuánto del eco vuelve a entrar en el eco. Bajo: se quiere una sombra de
+    // la nota, no una cola que se arrastre encima de la siguiente.
     const realimentacion = this.ctx.createGain();
-    realimentacion.gain.value = 0.34;
+    realimentacion.gain.value = 0.15;
 
     // Las repeticiones se van oscureciendo, como pasa de verdad cuando el
     // sonido rebota lejos.
     const filtro = this.ctx.createBiquadFilter();
     filtro.type = 'lowpass';
-    filtro.frequency.value = 2600;
+    filtro.frequency.value = 2400;
 
     const mezcla = this.ctx.createGain();
-    mezcla.gain.value = 0.5;
+    mezcla.gain.value = 0.18;
 
     this.eco.connect(filtro);
     filtro.connect(realimentacion);
@@ -373,7 +377,9 @@ export class Audio {
           duracion: duracionPaso * 17,
           volumen: 0.055,
           ataque: duracionPaso * 4,   // entra despacio, como una nebulosa
-          destino: this.musicaConEco,
+          // Va SIN eco: su amplitud ya viene de que la nota es larguísima y
+          // entra despacio. Con eco solo añadía suciedad.
+          destino: this.musica,
           cuando,
         });
       }
@@ -389,9 +395,12 @@ export class Audio {
         frecuencia: arpegio,
         tipo: 'square',
         duracion: duracionPaso * 0.9,
-        volumen: 0.085,
+        volumen: 0.095,
         ataque: 0.002,
-        destino: this.musicaConEco,
+        // SECO, y este es el arreglo importante. Con eco, cada nota del
+        // arpegio se solapaba con el eco de las dos anteriores y el conjunto
+        // sonaba sucio. Nítido suena mucho más arcade.
+        destino: this.musica,
         cuando,
       });
     }
@@ -411,12 +420,13 @@ export class Audio {
         cuando,
       });
       // Segunda voz una quinta arriba: engorda la melodía y suena épico.
+      // Seca, para que solo la voz principal deje rastro.
       this._tono({
         frecuencia: nota * 1.5,
         tipo: 'triangle',
         duracion: duracionPaso * 3.0,
         volumen: 0.05,
-        destino: this.musicaConEco,
+        destino: this.musica,
         cuando,
       });
     }
